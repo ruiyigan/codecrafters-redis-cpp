@@ -58,8 +58,12 @@ int main(int argc, char **argv)
     // Uncomment this block to pass the first stage
 
     accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
+
     char *msg = "+PONG\r\n";
     int msg_len = strlen(msg);
+
+    std::cout << "DEBUGGING" << *msg;
+    std::cout << msg_len;
     send(server_fd, msg, msg_len, 0);
     
     std::cout << "Client connected\n";
