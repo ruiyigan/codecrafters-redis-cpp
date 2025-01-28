@@ -62,7 +62,7 @@ int main(int argc, char **argv)
     char *msg = "+PONG\r\n";
     int msg_len = strlen(msg);
 
-    std::cout << "DEBUGGING" << *msg;
+    std::cout << "DEBUGGING" << msg;
     std::cout << msg_len;
     send(server_fd, msg, msg_len, 0);
     
