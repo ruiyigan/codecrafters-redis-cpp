@@ -55,14 +55,18 @@ int main(int argc, char **argv)
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     std::cout << "Logs from your program will appear here!\n";
 
-    int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
 
-    char *msg = "+PONG\r\n";
-    int msg_len = strlen(msg);
-
-    send(client_fd, msg, msg_len, 0);
-    
     std::cout << "Client connected\n";
+
+    while (true) {
+
+        int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
+        char *msg = "+PONG\r\n";
+        int msg_len = strlen(msg);
+
+        send(client_fd, msg, msg_len, 0);
+        
+    }
 
     close(server_fd);
 
