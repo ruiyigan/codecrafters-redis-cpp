@@ -55,18 +55,38 @@ int main(int argc, char **argv)
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     std::cout << "Logs from your program will appear here!\n";
 
+    int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
 
     std::cout << "Client connected\n";
 
-    while (true) {
+    char buffer[1024];
+    int bytes_recv;
 
-        int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
-        char *msg = "+PONG\r\n";
-        int msg_len = strlen(msg);
+    while (true)
+    {
+        bytes_recv = recv(client_fd, buffer, sizeof(buffer) - 1, 0); // Receive up to 1023 bytes
+        if (bytes_recv > 0)
+        {
+            buffer[bytes_recv] = '\0'; // Null-terminate received data
+            std::cout << "Received: " << buffer << std::endl; // Print received data
+            char *msg = "+PONG\r\n";
+            int msg_len = strlen(msg);
 
-        send(client_fd, msg, msg_len, 0);
-        
+            send(client_fd, msg, msg_len, 0);
+        }
+        else if (bytes_recv == 0)
+        {
+            std::cout << "Client disconnected." << std::endl;
+            break;
+        }
+        else
+        {
+            std::cout << "Error in recv - " << std::endl;
+            break;
+        }
     }
+
+    
 
     close(server_fd);
 
