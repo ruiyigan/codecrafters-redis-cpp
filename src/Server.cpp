@@ -67,7 +67,9 @@ int main(int argc, char **argv)
     // Add serverSocket to the epoll instance
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) == -1) {
         perror("epoll_ctl: server_fd");
-        exit(EXIT_FAILURE);
+        close(server_fd);
+        close(epoll_fd);
+        return 1;
     }
 
     while (true) {
@@ -83,7 +85,7 @@ int main(int argc, char **argv)
             int fd = events[i].data.fd;
             uint32_t eventMask = events[i].events;
 
-            if (fd == server_fd && (eventMask & EPOLLIN)) {
+            if (fd == server_fd) {
                 struct sockaddr_in client_addr;
                 int client_addr_len = sizeof(client_addr);
                 std::cout << "Waiting for a client to connect...\n";
