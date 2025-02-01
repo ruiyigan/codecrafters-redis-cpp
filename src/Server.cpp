@@ -56,7 +56,8 @@ int main(int argc, char **argv)
     int epoll_fd = epoll_create1(0);
     if (epoll_fd == -1) {
         perror("epoll_create1");
-        exit(EXIT_FAILURE);
+        close(server_fd);
+        return 1;
     }
 
     struct epoll_event ev;
