@@ -79,10 +79,10 @@ int main(int argc, char **argv)
         }
 
         for (int i = 0; i < num_events; i++) {
-            int fd = events[i].data.fd
-            uint32_t ev = events[i].events;
-            
-            if (fd == server_fd && (ev & EPOLLIN)) {
+            int fd = events[i].data.fd;
+            uint32_t eventMask = events[i].events;
+
+            if (fd == server_fd && (eventMask & EPOLLIN)) {
                 struct sockaddr_in client_addr;
                 int client_addr_len = sizeof(client_addr);
                 std::cout << "Waiting for a client to connect...\n";
@@ -111,7 +111,7 @@ int main(int argc, char **argv)
                 {
                     buffer[bytes_recv] = '\0'; // Null-terminate received data
                     std::cout << "Received: " << buffer << std::endl; // Print received data
-                    char *msg = "+PONG\r\n";
+                    const char* msg = "+PONG\r\n";
                     int msg_len = strlen(msg);
 
                     send(fd, msg, msg_len, 0);
