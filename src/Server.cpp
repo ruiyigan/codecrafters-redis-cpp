@@ -7,8 +7,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <sys/event.h>
-#include <sys/time.h>
+#include <sys/epoll.h>
+
 
 int main(int argc, char **argv)
 {
@@ -51,75 +51,86 @@ int main(int argc, char **argv)
     }
 
     // Creates the event queue in the kernel and returns the file descriptor referencing it
-    // kq is what we use for all sub operations to tell the kernelt what we want to monitor and to retrieve which events that occured
+    // kq/epoll_fd is what we use for all sub operations to tell the kernelt what we want to monitor and to retrieve which events that occured
     // Like a mailbox with subs (file descriptors to watch) and pick up mail (events that happened)
-
-    int kq = kqueue();
-    if (kq == -1) {
-        std::cerr << "Creation of kqueue failed\n";
-        return 1;
+    int epoll_fd = epoll_create1(0);
+    if (epoll_fd == -1) {
+        perror("epoll_create1");
+        exit(EXIT_FAILURE);
     }
 
-    struct kevent change; // the thing we want to watch/monitor
-    EV_SET(&change, server_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr); // can view as init
-    kevent(kq, &change, 1, nullptr, 0, nullptr);
+    struct epoll_event ev;
+    ev.events = EPOLLIN; 
+    ev.data.fd = server_fd;
 
-    struct kevent event; // receiving the event
+    // Add serverSocket to the epoll instance
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) == -1) {
+        perror("epoll_ctl: server_fd");
+        exit(EXIT_FAILURE);
+    }
 
     while (true) {
-        int num_events = kevent(kq, nullptr, 0, &event, 1, nullptr); // also like init
+        struct epoll_event events[64]; 
+        int num_events = epoll_wait(epoll_fd, events, 64, -1);
         if (num_events < 0)
         {
             std::cerr << "epoll_wait failed\n";
             break; // You might want more graceful handling
         }
 
-        if (event.ident == server_fd && event.filter == EVFILT_READ) {
-            struct sockaddr_in client_addr;
-            int client_addr_len = sizeof(client_addr);
-            std::cout << "Waiting for a client to connect...\n";
-
-            // You can use print statements as follows for debugging, they'll be visible when running tests.
-            std::cout << "Logs from your program will appear here!\n";
-
-            int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
-
-            std::cout << "Client connected\n";
-
-            // Subscribe client socket 
-            EV_SET(&change, client_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr); // can view as init
-            kevent(kq, &change, 1, nullptr, 0, nullptr);
-        } else {
-            // This should be client socket 
-            int fd = static_cast<int>(event.ident);
+        for (int i = 0; i < num_events; i++) {
+            int fd = events[i].data.fd
+            uint32_t ev = events[i].events;
             
-            char buffer[1024];
-            int bytes_recv;
+            if (fd == server_fd && (ev & EPOLLIN)) {
+                struct sockaddr_in client_addr;
+                int client_addr_len = sizeof(client_addr);
+                std::cout << "Waiting for a client to connect...\n";
 
-            bytes_recv = recv(fd, buffer, sizeof(buffer) - 1, 0); // Receive up to 1023 bytes
-            if (bytes_recv > 0)
-            {
-                buffer[bytes_recv] = '\0'; // Null-terminate received data
-                std::cout << "Received: " << buffer << std::endl; // Print received data
-                char *msg = "+PONG\r\n";
-                int msg_len = strlen(msg);
+                // You can use print statements as follows for debugging, they'll be visible when running tests.
+                std::cout << "Logs from your program will appear here!\n";
 
-                send(fd, msg, msg_len, 0);
+                int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
+
+                std::cout << "Client connected\n";
+
+                struct epoll_event clientEv;
+                clientEv.events = EPOLLIN; 
+                clientEv.data.fd = client_fd;
+
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &clientEv) == -1) {
+                    perror("epoll_ctl: clientSocket");
+                    close(client_fd);
+                }
+            } else {
+                char buffer[1024];
+                int bytes_recv;
+
+                bytes_recv = recv(fd, buffer, sizeof(buffer) - 1, 0); // Receive up to 1023 bytes
+                if (bytes_recv > 0)
+                {
+                    buffer[bytes_recv] = '\0'; // Null-terminate received data
+                    std::cout << "Received: " << buffer << std::endl; // Print received data
+                    char *msg = "+PONG\r\n";
+                    int msg_len = strlen(msg);
+
+                    send(fd, msg, msg_len, 0);
+                }
+                else if (bytes_recv == 0)
+                {
+                    std::cout << "Client disconnected." << std::endl;
+                    break;
+                }
+                else
+                {
+                    std::cout << "Error in recv - " << std::endl;
+                    break;
+                }
             }
-            else if (bytes_recv == 0)
-            {
-                std::cout << "Client disconnected." << std::endl;
-                break;
-            }
-            else
-            {
-                std::cout << "Error in recv - " << std::endl;
-                break;
-            }
+
         }
 
     }
-
 
     close(server_fd);
 
