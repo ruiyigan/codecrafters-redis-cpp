@@ -85,14 +85,10 @@ int main(int argc, char **argv)
             int fd = events[i].data.fd;
             uint32_t eventMask = events[i].events;
 
-            if (fd == server_fd) {
+            if (fd == server_fd && (eventMask & EPOLLIN)) {
                 struct sockaddr_in client_addr;
                 int client_addr_len = sizeof(client_addr);
                 std::cout << "Waiting for a client to connect...\n";
-
-                // You can use print statements as follows for debugging, they'll be visible when running tests.
-                std::cout << "Logs from your program will appear here!\n";
-
                 int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
 
                 std::cout << "Client connected\n";
@@ -122,12 +118,14 @@ int main(int argc, char **argv)
                 else if (bytes_recv == 0)
                 {
                     std::cout << "Client disconnected." << std::endl;
-                    break;
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+                    close(fd);
                 }
                 else
                 {
                     std::cout << "Error in recv - " << std::endl;
-                    break;
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+                    close(fd);
                 }
             }
 
