@@ -24,7 +24,7 @@ private:
         // Async read with buffer and completion handler
         socket_.async_read_some(asio::buffer(buffer_),
             // Lambda captures 'this' and self (shared_ptr) for proper lifetime
-            [this, self](boost::system::error_code ec, std::size_t length) {
+            [this, self](asio::error_code ec, std::size_t length) {
                 if (!ec) {
                     // Successfully read data
                     std::cout << "Received: " << std::string(buffer_.data(), length) << std::endl;
@@ -61,7 +61,7 @@ void accept_connections(tcp::acceptor& acceptor) {
     // Async accept with completion handler
     acceptor.async_accept(
         // Lambda captures acceptor by reference
-        [&acceptor](boost::system::error_code ec, tcp::socket socket) {
+        [&acceptor](asio::error_code ec, tcp::socket socket) {
             if (!ec) {
                 // Create session for new client and start it
                 std::make_shared<Session>(std::move(socket))->start();
@@ -74,7 +74,6 @@ void accept_connections(tcp::acceptor& acceptor) {
 
 int main() {
     try {
-        // The core of Boost.Asio - provides I/O services
         asio::io_context io_context;
         
         // Create acceptor listening on port 6379 (IPv4)
