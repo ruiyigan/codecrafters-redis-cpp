@@ -44,7 +44,7 @@ private:
         
         // Async write operation
         asio::async_write(socket_, asio::buffer(msg, std::strlen(msg)),
-            [this, self](boost::system::error_code ec, std::size_t /*length*/) {
+            [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
                     read();  // Continue reading after successful write
                 } else {
