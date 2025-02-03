@@ -1,8 +1,8 @@
 #include <iostream>
 #include <memory>       // For smart pointers and enable_shared_from_this
-#include <boost/asio.hpp>  // Main Boost.Asio header
+#include <asio.hpp>
 
-using boost::asio::ip::tcp;  // Simplify TCP namespace
+using asio::ip::tcp;  // Simplify TCP namespace
 
 // Session handles each client connection. Inherits from enable_shared_from_this
 // to allow safe shared_ptr management in async callbacks
@@ -22,7 +22,7 @@ private:
         auto self(shared_from_this());
         
         // Async read with buffer and completion handler
-        socket_.async_read_some(boost::asio::buffer(buffer_),
+        socket_.async_read_some(asio::buffer(buffer_),
             // Lambda captures 'this' and self (shared_ptr) for proper lifetime
             [this, self](boost::system::error_code ec, std::size_t length) {
                 if (!ec) {
@@ -31,7 +31,7 @@ private:
                     write();  // Respond to client
                 } else {
                     // Handle errors (including client disconnects)
-                    if (ec != boost::asio::error::eof) {
+                    if (ec != asio::error::eof) {
                         std::cerr << "Read error: " << ec.message() << std::endl;
                     }
                 }
@@ -43,7 +43,7 @@ private:
         const char* msg = "+PONG\r\n";
         
         // Async write operation
-        boost::asio::async_write(socket_, boost::asio::buffer(msg, std::strlen(msg)),
+        asio::async_write(socket_, asio::buffer(msg, std::strlen(msg)),
             [this, self](boost::system::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
                     read();  // Continue reading after successful write
@@ -75,7 +75,7 @@ void accept_connections(tcp::acceptor& acceptor) {
 int main() {
     try {
         // The core of Boost.Asio - provides I/O services
-        boost::asio::io_context io_context;
+        asio::io_context io_context;
         
         // Create acceptor listening on port 6379 (IPv4)
         tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 6379));
