@@ -1,6 +1,8 @@
 #include <iostream>
 #include <memory>       // For smart pointers and enable_shared_from_this
 #include <asio.hpp>
+#include <vector>
+#include <sstream>
 
 using asio::ip::tcp;  // Simplify TCP namespace
 
@@ -17,6 +19,21 @@ public:
     }
 
 private:
+    std::vector<std::string> splitString(const std::string& input, char delimiter) {
+        std::vector<std::string> tokens;
+        std::stringstream stream(input);
+        std::string token;
+
+        while (std::getline(stream, token, delimiter)) {
+            if (!token.empty() && token.back() == '\r') {
+                token.pop_back();
+            }
+            tokens.push_back(token);
+        }
+
+        return tokens;
+    }
+
     void read() {
         // Capture a shared_ptr to keep object alive during async operation
         auto self(shared_from_this());
@@ -27,8 +44,19 @@ private:
             [this, self](asio::error_code ec, std::size_t length) {
                 if (!ec) {
                     // Successfully read data
-                    std::cout << "Received: " << std::string(buffer_.data(), length) << std::endl;
-                    write();  // Respond to client
+                    std::string data = std::string(buffer_.data(), length);
+                    std::cout << "Received: \n" << data << std::endl;
+                    std::vector<std::string> split_data = splitString(data, '\n');
+
+                    std::string message;
+                    if (split_data[2] == "ECHO") {
+                        // repeat
+                        message = split_data.back();
+                    } else {
+                        message = "PONG";
+                    }
+
+                    write(message, message.size());  // Respond to client
                 } else {
                     // Handle errors (including client disconnects)
                     if (ec != asio::error::eof) {
@@ -38,12 +66,14 @@ private:
             });
     }
 
-    void write() {
+    void write(std::string data, int length) {
         auto self(shared_from_this());
-        const char* msg = "+PONG\r\n";
+        std::stringstream msg_stream;
+        msg_stream << "$" << length << "\r\n" << data << "\r\n";
+        std::string msg = msg_stream.str();
         
         // Async write operation
-        asio::async_write(socket_, asio::buffer(msg, std::strlen(msg)),
+        asio::async_write(socket_, asio::buffer(msg, msg.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
                     read();  // Continue reading after successful write
