@@ -40,6 +40,11 @@
         "typeinfo": "cpp",
         "variant": "cpp",
         "algorithm": "cpp",
-        "unordered_map": "cpp"
+        "unordered_map": "cpp",
+        "vector": "cpp",
+        "__node_handle": "cpp",
+        "optional": "cpp",
+        "deque": "cpp",
+        "__memory": "cpp"
     }
 }
