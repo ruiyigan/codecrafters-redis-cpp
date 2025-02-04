@@ -3,6 +3,7 @@
 #include <asio.hpp>
 #include <vector>
 #include <sstream>
+#include <unordered_map>
 
 using asio::ip::tcp;  // Simplify TCP namespace
 
@@ -11,7 +12,7 @@ using asio::ip::tcp;  // Simplify TCP namespace
 class Session : public std::enable_shared_from_this<Session> {
 public:
     // Constructor takes ownership of the socket
-    Session(tcp::socket socket) : socket_(std::move(socket)) {}
+    Session(tcp::socket socket, std::shared_ptr<std::unordered_map<std::string, std::string>> storage) : socket_(std::move(socket)), storage_(storage) {}
 
     // Start the session's async operations
     void start() {
@@ -52,8 +53,22 @@ private:
                     if (split_data[2] == "ECHO") {
                         // repeat
                         message = split_data.back();
-                    } else {
-                        message = "PONG";
+                    }
+                    else if (split_data[2] == "SET") {
+                        // save
+                        std::string key = split_data[4];
+                        std::string value = split_data[6];
+
+                        (*storage_)[key] = value;
+                        message = "+OK";
+                    } 
+                    else if (split_data[2] == "GET")
+                    {
+                        std::string key = split_data[4];
+                        message = (*storage_)[key];
+                    }
+                    else {
+                        message = +"PONG";
                     }
 
                     write(message, message.size());  // Respond to client
@@ -85,20 +100,21 @@ private:
 
     tcp::socket socket_;          // Client connection socket
     std::array<char, 1024> buffer_;  // Data buffer (fixed-size array)
+    std::shared_ptr<std::unordered_map<std::string, std::string>> storage_;
 };
 
-void accept_connections(tcp::acceptor& acceptor) {
+void accept_connections(tcp::acceptor& acceptor, std::shared_ptr<std::unordered_map<std::string, std::string>> storage) {
     // Async accept with completion handler
     acceptor.async_accept(
         // Lambda captures acceptor by reference
-        [&acceptor](asio::error_code ec, tcp::socket socket) {
+        [&acceptor, storage](asio::error_code ec, tcp::socket socket) {
             if (!ec) {
                 // Create session for new client and start it
-                std::make_shared<Session>(std::move(socket))->start();
+                std::make_shared<Session>(std::move(socket), storage)->start();
                 std::cout << "Client connected" << std::endl;
             }
             // Continue accepting new connections (recursive call)
-            accept_connections(acceptor);
+            accept_connections(acceptor, storage);
         });
 }
 
@@ -109,8 +125,10 @@ int main() {
         // Create acceptor listening on port 6379 (IPv4)
         tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 6379));
         
+        auto storage = std::make_shared<std::unordered_map<std::string, std::string>>();  // Shared storage
+
         // Start accepting connections
-        accept_connections(acceptor);
+        accept_connections(acceptor, storage);
         std::cout << "Server listening on port 6379..." << std::endl;
         
         // Run the I/O service - blocks until all work is done
