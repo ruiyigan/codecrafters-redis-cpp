@@ -82,7 +82,7 @@ private:
                             std::cout << "SUPPOSEDLY EXPIRY TIME" << expiry_time << std::endl;
                             std::cout << "TIME NOW" << std::time(nullptr) << std::endl;
 
-                            if (expiry_time != 0 && std::time(nullptr) > expiry_time) {
+                            if (expiry_time != 0 && std::time(nullptr) >= expiry_time) {
                                 storage_->erase(it);
                                 message = "-1";
                             } else {
