@@ -79,6 +79,9 @@ private:
                             std::string stored_value = std::get<0>(it -> second);
                             std::time_t expiry_time = std::get<1>(it -> second);
 
+                            std::cout << "SUPPOSEDLY EXPIRY TIME" << expiry_time << std::endl;
+                            std::cout << "TIME NOW" << std::time(nullptr) << std::endl;
+
                             if (expiry_time != 0 && std::time(nullptr) > expiry_time) {
                                 storage_->erase(it);
                                 message = "-1";
@@ -111,7 +114,6 @@ private:
         }
         std::string msg = msg_stream.str();
         
-        std::cout << "MESSAGE SENT" << msg << std::endl;
         // Async write operation
         asio::async_write(socket_, asio::buffer(msg, msg.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
