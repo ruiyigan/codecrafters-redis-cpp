@@ -73,14 +73,14 @@ private:
 
                         auto it = storage_->find(key);
                         if (it == storage_->end()) {
-                            message = "-1";
+                            message = "$-1";
                         } else {
                             std::string stored_value = std::get<0>(it -> second);
                             std::time_t expiry_time = std::get<1>(it -> second);
 
                             if (expiry_time != 0 && std::time(nullptr) > expiry_time) {
                                 storage_->erase(it);
-                                message = "-1";
+                                message = "$-1";
                             } else {
                                 message = stored_value;
                             }
