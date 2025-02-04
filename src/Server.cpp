@@ -62,7 +62,7 @@ private:
                         std::string value = split_data[6];
                         std::time_t expiry_time = 0;
                         if (split_data.size() >= 11 and split_data[8] == "px") {
-                            expiry_time = std::time(nullptr) + std::stoi(split_data[10]);
+                            expiry_time = std::time(nullptr) + (std::stoi(split_data[10]) / 1000);
                         }
                         (*storage_)[key] = std::make_tuple(value, expiry_time);
                         message = "OK";
@@ -74,14 +74,14 @@ private:
 
                         auto it = storage_->find(key);
                         if (it == storage_->end()) {
-                            message = "$-1\r\n";
+                            message = "-1";
                         } else {
                             std::string stored_value = std::get<0>(it -> second);
                             std::time_t expiry_time = std::get<1>(it -> second);
 
                             if (expiry_time != 0 && std::time(nullptr) > expiry_time) {
                                 storage_->erase(it);
-                                message = "$-1\r\n";
+                                message = "-1";
                             } else {
                                 message = stored_value;
                             }
