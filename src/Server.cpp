@@ -69,18 +69,19 @@ private:
                     } 
                     else if (split_data[2] == "GET")
                     {
+                        // get
                         std::string key = split_data[4];
 
                         auto it = storage_->find(key);
                         if (it == storage_->end()) {
-                            message = "$-1";
+                            message = "-1";
                         } else {
                             std::string stored_value = std::get<0>(it -> second);
                             std::time_t expiry_time = std::get<1>(it -> second);
 
                             if (expiry_time != 0 && std::time(nullptr) > expiry_time) {
                                 storage_->erase(it);
-                                message = "$-1";
+                                message = "-1";
                             } else {
                                 message = stored_value;
                             }
@@ -103,7 +104,11 @@ private:
     void write(std::string data, int length) {
         auto self(shared_from_this());
         std::stringstream msg_stream;
-        msg_stream << "$" << length << "\r\n" << data << "\r\n";
+        if (data == "-1") {
+            msg_stream << "$-1\r\n";
+        } else {
+            msg_stream << "$" << length << "\r\n" << data << "\r\n";
+        }
         std::string msg = msg_stream.str();
         
         // Async write operation
