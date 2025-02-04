@@ -74,7 +74,7 @@ private:
 
                         auto it = storage_->find(key);
                         if (it == storage_->end()) {
-                            message = "$-1\r\n";
+                            message = "-1";
                         } else {
                             std::string stored_value = std::get<0>(it -> second);
                             std::time_t expiry_time = std::get<1>(it -> second);
@@ -88,7 +88,7 @@ private:
                         }       
                     }
                     else {
-                        message = +"PONG";
+                        message = "PONG";
                     }
 
                     write(message, message.size());  // Respond to client
@@ -104,8 +104,8 @@ private:
     void write(std::string data, int length) {
         auto self(shared_from_this());
         std::stringstream msg_stream;
-        if (data == "-1") {
-            msg_stream << "$" << length << "\r\n" << data << "\r\n";
+        if (data == "$-1\r\n") {
+            msg_stream << "$-1\r\n";
         } else {
             msg_stream << "$" << length << "\r\n" << data << "\r\n";
         }
