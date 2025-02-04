@@ -60,12 +60,16 @@ private:
                         std::string value = split_data[6];
 
                         (*storage_)[key] = value;
-                        message = "+OK";
+                        message = "OK";
                     } 
                     else if (split_data[2] == "GET")
                     {
                         std::string key = split_data[4];
-                        message = (*storage_)[key];
+                        if ((*storage_).find(key) == (*storage_).end()) {
+                            message = "-1";
+                        } else {
+                            message = (*storage_)[key];
+                        }
                     }
                     else {
                         message = +"PONG";
