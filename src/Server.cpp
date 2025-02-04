@@ -81,7 +81,7 @@ private:
 
                             if (expiry_time != 0 && std::time(nullptr) > expiry_time) {
                                 storage_->erase(it);
-                                message = "$-1\r\n";
+                                message = "-1";
                             } else {
                                 message = stored_value;
                             }
@@ -104,13 +104,14 @@ private:
     void write(std::string data, int length) {
         auto self(shared_from_this());
         std::stringstream msg_stream;
-        if (data == "$-1\r\n") {
+        if (data == "-1") {
             msg_stream << "$-1\r\n";
         } else {
             msg_stream << "$" << length << "\r\n" << data << "\r\n";
         }
         std::string msg = msg_stream.str();
         
+        std::cout << "MESSAGE SENT" << msg << std::endl;
         // Async write operation
         asio::async_write(socket_, asio::buffer(msg, msg.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
