@@ -45,6 +45,7 @@
         "__node_handle": "cpp",
         "optional": "cpp",
         "deque": "cpp",
-        "__memory": "cpp"
+        "__memory": "cpp",
+        "*.ipp": "cpp"
     }
 }
