@@ -18,8 +18,8 @@ public:
     Session(
         tcp::socket socket, 
         std::shared_ptr<StorageType> storage,
-        std::shared_ptr<std::string> dir,
-        std::shared_ptr<std::string> dbfilename
+        std::string dir,
+        std::string dbfilename
     ) : socket_(std::move(socket)), storage_(storage), dir_(dir), dbfilename_(dbfilename) {}
     // Start the session's async operations
     void start() {
@@ -98,7 +98,7 @@ private:
                     else if (split_data[2] == "CONFIG") {
                         if (split_data[4] == "GET") {
                             std::string param_name = split_data[6];
-                            std::string param_value = *dir_;
+                            std::string param_value = dir_;
                             messages.push_back(param_name);
                             messages.push_back(param_value);
                         }
@@ -147,16 +147,16 @@ private:
 
     tcp::socket socket_;          // Client connection socket
     std::array<char, 1024> buffer_;  // Data buffer (fixed-size array)
-    std::shared_ptr<StorageType> storage_;
-    std::shared_ptr<std::string> dir_;
-    std::shared_ptr<std::string> dbfilename_;
+    std::shared_ptr<StorageType> storage_; // shared acrosss sessions
+    std::string dir_;
+    std::string dbfilename_;
 };
 
 void accept_connections(
         tcp::acceptor& acceptor, 
         std::shared_ptr<StorageType> storage,
-        std::shared_ptr<std::string> dir,
-        std::shared_ptr<std::string> dbfilename
+        std::string dir,
+        std::string dbfilename
     ) {
     acceptor.async_accept(
         [&acceptor, storage, dir, dbfilename](asio::error_code ec, tcp::socket socket) {
@@ -171,18 +171,18 @@ void accept_connections(
 int main(int argc, char* argv[]) {
     try {
         asio::io_context io_context;
-        std::shared_ptr<std::string> dir;
-        std::shared_ptr<std::string> dbfilename;
+        std::string dir;
+        std::string dbfilename;
 
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
 
             if (arg == "--dir") {
-                dir = std::make_shared<std::string>(argv[i + 1]);
+                dir = argv[i + 1];
             }
 
             if (arg == "--dbfilename") {
-                dbfilename = std::make_shared<std::string>(argv[i + 1]);
+                dbfilename = argv[i + 1];
             }
         }
         
