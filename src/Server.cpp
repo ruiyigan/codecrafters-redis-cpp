@@ -5,6 +5,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <chrono>
+#include <fstream>  // Include fstream for file operations
 
 using asio::ip::tcp;  // Simplify TCP namespace
 using TimePoint = std::chrono::steady_clock::time_point;
@@ -40,6 +41,20 @@ private:
         }
 
         return tokens;
+    }
+
+    // std::vector<std::string> readFile
+    std::string readFile(const std::string& dir, const std::string& filename) {
+        std::string filepath = dir + "/" + filename;
+
+        std::ifstream file(filepath);
+        if (!file.is_open()) {
+            throw std::runtime_error("Could not open file: " + filepath);
+        }
+
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        return buffer.str();
     }
 
     void read() {
@@ -102,6 +117,11 @@ private:
                             messages.push_back(param_name);
                             messages.push_back(param_value);
                         }
+                    }
+                    else if (split_data[2] == "KEYS") {
+                        std::string file_data = readFile(dir_, dbfilename_);
+
+                        std::cout << file_data << std::endl;
                     }
                     else {
                         messages.push_back("PONG");
