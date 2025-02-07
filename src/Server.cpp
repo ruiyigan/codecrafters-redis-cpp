@@ -52,9 +52,13 @@ private:
             throw std::runtime_error("Could not open file: " + filepath);
         }
 
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str();
+        std::string result;
+        char ch;
+        while (file.get(ch)) {
+            result.push_back(ch);
+        }
+
+        return result;
     }
 
     void read() {
