@@ -121,7 +121,7 @@ private:
                     else if (split_data[2] == "KEYS") {
                         std::string file_data = readFile(dir_, dbfilename_);
 
-                        std::cout << file_data << std::endl;
+                        std::cout << "I'm HEREEE" << file_data << std::endl;
                     }
                     else {
                         messages.push_back("PONG");
