@@ -67,6 +67,7 @@ private:
         } else {
             length = 0; // string encoding
         }
+        return length;
     }
     // helper to read string
 
@@ -125,6 +126,8 @@ private:
                     unsigned char buff_key[size_key];
                     file.read(reinterpret_cast<char*>(buff_key), size_key);
                     std::string key(reinterpret_cast<const char*>(buff_key), size_key);
+
+                    std::cout << "HELLO HERE: " << key << std::endl;
 
                     int size_value = readDecodedSize(file);
                     unsigned char buff_value[size_value];
