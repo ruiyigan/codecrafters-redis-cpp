@@ -232,7 +232,7 @@ private:
             msg_stream << "$-1\r\n";
         } else {
             int num_messages = messages.size();
-            if (messages.size() > 1) {
+            if (messages.size() > 1 || size) {
                 msg_stream << "*" << num_messages << "\r\n";
             }
             for (std::string message: messages) {
@@ -241,8 +241,6 @@ private:
         }
         std::string msg = msg_stream.str();
         
-        std::cout << "HELLO HERE: " << msg << std::endl; // DELETE
-
         // Async write operation
         asio::async_write(socket_, asio::buffer(msg, msg.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
