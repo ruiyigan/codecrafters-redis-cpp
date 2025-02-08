@@ -205,6 +205,7 @@ private:
                     else if (split_data[2] == "KEYS") {
                         readFile(dir_, dbfilename_, storage_);
                         for (const auto &entry : *storage_) {
+                            std::cout << "KEYS HERE: " << entry.first << std::endl; // DELETE
                             messages.push_back(entry.first);
                         }
                     }
@@ -239,7 +240,7 @@ private:
         }
         std::string msg = msg_stream.str();
         
-        std::cout << "HELLO HERE: " << msg << std::endl;
+        std::cout << "HELLO HERE: " << msg << std::endl; // DELETE
 
         // Async write operation
         asio::async_write(socket_, asio::buffer(msg, msg.size()),
