@@ -231,7 +231,7 @@ private:
             msg_stream << "$-1\r\n";
         } else {
             int num_messages = messages.size();
-            if (messages.size() > 1) {
+            if (messages.size() >= 1) {
                 msg_stream << "*" << num_messages << "\r\n";
             }
             for (std::string message: messages) {
