@@ -126,9 +126,6 @@ private:
                     unsigned char buff_key[size_key];
                     file.read(reinterpret_cast<char*>(buff_key), size_key);
                     std::string key(reinterpret_cast<const char*>(buff_key), size_key);
-
-                    std::cout << "HELLO HERE: " << key << std::endl;
-
                     int size_value = readDecodedSize(file);
                     unsigned char buff_value[size_value];
                     file.read(reinterpret_cast<char*>(buff_value), size_value);
@@ -242,6 +239,8 @@ private:
         }
         std::string msg = msg_stream.str();
         
+        std::cout << "HELLO HERE: " << msg << std::endl;
+
         // Async write operation
         asio::async_write(socket_, asio::buffer(msg, msg.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
