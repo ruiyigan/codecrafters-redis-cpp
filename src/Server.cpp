@@ -157,6 +157,7 @@ private:
 
                     std::vector<std::string> messages;
 
+                    bool include_size = false;
                     if (split_data[2] == "ECHO") {
                         // repeat
                         messages.push_back(split_data.back());
@@ -205,15 +206,15 @@ private:
                     else if (split_data[2] == "KEYS") {
                         readFile(dir_, dbfilename_, storage_);
                         for (const auto &entry : *storage_) {
-                            std::cout << "KEYS HERE: " << entry.first << std::endl; // DELETE
                             messages.push_back(entry.first);
                         }
+                        include_size = true;
                     }
                     else {
                         messages.push_back("PONG");
                     }
 
-                    write(messages);  // Respond to client
+                    write(messages, include_size);  // Respond to client
                 } else {
                     // Handle errors (including client disconnects)
                     if (ec != asio::error::eof) {
@@ -223,7 +224,7 @@ private:
             });
     }
 
-    void write(std::vector<std::string> messages) {
+    void write(std::vector<std::string> messages, bool size = false) {
         auto self(shared_from_this());
         std::stringstream msg_stream;
 
@@ -231,7 +232,7 @@ private:
             msg_stream << "$-1\r\n";
         } else {
             int num_messages = messages.size();
-            if (messages.size() >= 1) {
+            if (messages.size() > 1) {
                 msg_stream << "*" << num_messages << "\r\n";
             }
             for (std::string message: messages) {
