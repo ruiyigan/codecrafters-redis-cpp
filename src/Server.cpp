@@ -130,7 +130,8 @@ private:
                     unsigned char buff_value[size_value];
                     file.read(reinterpret_cast<char*>(buff_value), size_value);
                     std::string value(reinterpret_cast<const char*>(buff_value), size_value);
-                    
+                    std::cout << "KEY FROM RDB..: " << key << std::endl;
+                    std::cout << "VALUE FROM RDB..: " << value << std::endl;
                     (*storage_)[key] = std::make_tuple(value, expiry_time);
                 } 
             }
