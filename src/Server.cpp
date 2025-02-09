@@ -241,6 +241,8 @@ private:
         }
         std::string msg = msg_stream.str();
         
+
+        std::cout << "MESSAGE..: " << msg << std::endl;
         // Async write operation
         asio::async_write(socket_, asio::buffer(msg, msg.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
