@@ -6,8 +6,9 @@
 #include <unordered_map>
 #include <chrono>
 #include <fstream>  // Include fstream for file operations
+#include <filesystem>
 
-using asio::ip::tcp;  // Simplify TCP namespace
+using asio::ip::tcp;  
 using TimePoint = std::chrono::steady_clock::time_point;
 using StorageType = std::unordered_map<std::string, std::tuple<std::string, std::chrono::steady_clock::time_point>>;
 
@@ -76,9 +77,9 @@ private:
 
         if (!std::filesystem::exists(filepath)) {
             std::cerr << "File does not exist: " << filepath << std::endl;
-            return; // Exit early if the file isn't there
+            return;
         }
-        
+
         std::ifstream file(filepath);
         if (!file.is_open()) {
             throw std::runtime_error("Could not open file: " + filepath);
