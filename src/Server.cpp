@@ -86,7 +86,6 @@ private:
         uint64_t size_with_expiry;
         bool is_database = false;
         while (file.get(ch)) {
-            std::cout << "TEST CHAR? FROM RDB..: " << ch << std::endl;
             // each ch is 1 byte in size
             // so can use this to detect headers and then segment them
             if (static_cast<unsigned char>(ch) == 0xFB) {
@@ -158,7 +157,7 @@ private:
                     std::vector<std::string> split_data = splitString(data, '\n');
 
                     std::vector<std::string> messages;
-
+                    readFile(dir_, dbfilename_, storage_);
                     bool include_size = false;
                     if (split_data[2] == "ECHO") {
                         // repeat
@@ -206,7 +205,6 @@ private:
                         }
                     }
                     else if (split_data[2] == "KEYS") {
-                        readFile(dir_, dbfilename_, storage_);
                         for (const auto &entry : *storage_) {
                             messages.push_back(entry.first);
                         }
