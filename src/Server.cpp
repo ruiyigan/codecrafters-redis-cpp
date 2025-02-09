@@ -86,6 +86,7 @@ private:
         uint64_t size_with_expiry;
         bool is_database = false;
         while (file.get(ch)) {
+            std::cout << "TEST CHAR? FROM RDB..: " << ch << std::endl;
             // each ch is 1 byte in size
             // so can use this to detect headers and then segment them
             if (static_cast<unsigned char>(ch) == 0xFB) {
