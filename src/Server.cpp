@@ -74,6 +74,11 @@ private:
     void readFile(const std::string& dir, const std::string& filename, std::shared_ptr<StorageType> storage_) {
         std::string filepath = dir + "/" + filename;
 
+        if (!std::filesystem::exists(filepath)) {
+            std::cerr << "File does not exist: " << filepath << std::endl;
+            return; // Exit early if the file isn't there
+        }
+        
         std::ifstream file(filepath);
         if (!file.is_open()) {
             throw std::runtime_error("Could not open file: " + filepath);
