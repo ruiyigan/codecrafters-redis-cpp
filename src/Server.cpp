@@ -70,7 +70,48 @@ private:
         }
         return length;
     }
-    // helper to read string
+    
+    TimePoint readExpiry(std::ifstream &file) {
+        TimePoint expiry = TimePoint::max();
+        char marker;
+        file.get(marker); // consume marker (prev just peeked only)
+        unsigned char umarker = static_cast<unsigned char>(marker);
+        if (umarker == 0xFC) {
+            // Read 8-byte expiry (milliseconds)
+            unsigned char buff[8];
+            file.read(reinterpret_cast<char*>(buff), 8);
+            auto expiry_ms = (uint64_t)buff[0]
+                            | ((uint64_t)buff[1] << 8)
+                            | ((uint64_t)buff[2] << 16)
+                            | ((uint64_t)buff[3] << 24)
+                            | ((uint64_t)buff[4] << 32)
+                            | ((uint64_t)buff[5] << 40)
+                            | ((uint64_t)buff[6] << 48)
+                            | ((uint64_t)buff[7] << 56);
+            expiry = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
+        } else if (umarker == 0xFD) {
+            // Read 4-byte expiry (seconds)
+            unsigned char buff[4];
+            file.read(reinterpret_cast<char*>(buff), 4);
+            auto expiry_s = (uint64_t)buff[0]
+                          | ((uint64_t)buff[1] << 8)
+                          | ((uint64_t)buff[2] << 16)
+                          | ((uint64_t)buff[3] << 24);
+            expiry = std::chrono::system_clock::time_point(std::chrono::seconds(expiry_s));
+        } else {
+            // If no valid expiry marker is found, you might decide to push the marker back,
+            // or simply assume no expiry. Here, we simply treat it as "no expiry".
+            file.unget();
+        }
+        return expiry;
+    }
+
+    std::string readString(std::ifstream &file) {
+        int size = readDecodedSize(file);
+        std::vector<char> buffer(size);
+        file.read(buffer.data(), size);
+        return std::string(buffer.data(), size);
+    }
 
     void readFile(const std::string& dir, const std::string& filename, std::shared_ptr<StorageType> storage_) {
         std::string filepath = dir + "/" + filename;
@@ -91,58 +132,30 @@ private:
         uint64_t size_with_expiry;
         bool is_database = false;
         while (file.get(ch)) {
-            // each ch is 1 byte in size
-            // so can use this to detect headers and then segment them
-            if (static_cast<unsigned char>(ch) == 0xFB && !is_database) {
-                size = readDecodedSize(file);
-                size_with_expiry = readDecodedSize(file);
+            unsigned char byte = static_cast<unsigned char>(ch);
+            if (!is_database && byte == 0xFB) {
+                uint64_t size = readDecodedSize(file);
+                uint64_t size_with_expiry = readDecodedSize(file);
                 is_database = true;
-                file.get(ch);
+                continue;
             }
 
             if (is_database) { // means reached database section
+                unsigned char marker = file.peek(); // look without consuming
                 TimePoint expiry_time = TimePoint::max();
-                if ((static_cast<unsigned char>(ch) == 0xFC)) {
-                    // expiry in 8-byte unsigned long, in little-endian (read right-to-left) milliseconds.
-                    unsigned char buff_expiry[8];
-                    file.read(reinterpret_cast<char*>(buff_expiry), 8);
-                    auto expiry_ms = (uint64_t)buff_expiry[0]
-                    | ((uint64_t)buff_expiry[1] << 8)
-                    | ((uint64_t)buff_expiry[2] << 16)
-                    | ((uint64_t)buff_expiry[3] << 24)
-                    | ((uint64_t)buff_expiry[4] << 32)
-                    | ((uint64_t)buff_expiry[5] << 40)
-                    | ((uint64_t)buff_expiry[6] << 48)
-                    | ((uint64_t)buff_expiry[7] << 56);
-
-                    expiry_time = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
-                    file.get(ch);
-                } else if ((static_cast<unsigned char>(ch) == 0xFD)) {
-                    // expiry in 4-byte unsigned integer, in little-endian (read right-to-left) seconds.
-                    unsigned char buff_expiry[4];
-                    file.read(reinterpret_cast<char*>(buff_expiry), 4);
-                    auto expiry_s = (uint64_t)buff_expiry[0]
-                    | ((uint64_t)buff_expiry[1] << 8)
-                    | ((uint64_t)buff_expiry[2] << 16)
-                    | ((uint64_t)buff_expiry[3] << 24);
-                    expiry_time = std::chrono::system_clock::time_point(std::chrono::seconds(expiry_s));
-                    file.get(ch);
+                if (marker == 0xFC || marker == 0xFD) {
+                    expiry_time = readExpiry(file);
+                    marker = file.peek();
                 }
-
-                if (static_cast<unsigned char>(ch) == 0x00) {
-                    int size_key = readDecodedSize(file);
-                    unsigned char buff_key[size_key];
-                    file.read(reinterpret_cast<char*>(buff_key), size_key);
-                    std::string key(reinterpret_cast<const char*>(buff_key), size_key);
-                    int size_value = readDecodedSize(file);
-                    unsigned char buff_value[size_value];
-                    file.read(reinterpret_cast<char*>(buff_value), size_value);
-                    std::string value(reinterpret_cast<const char*>(buff_value), size_value);
-                    std::cout << "KEY FROM RDB..: " << key << std::endl;
-                    std::cout << "VALUE FROM RDB..: " << value << std::endl;
-                    std::cout << "EXPIRY FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
+                if (marker == 0x00) {
+                    file.get(ch);
+                    std::string key = readString(file);
+                    std::string value = readString(file);
+                    std::cout << "KEY FROM RDB: " << key << std::endl;
+                    std::cout << "VALUE FROM RDB: " << value << std::endl;
+                    std::cout << "EXPIRY FROM RDB: " << expiry_time.time_since_epoch().count() << std::endl;
                     (*storage_)[key] = std::make_tuple(value, expiry_time);
-                } 
+                }
             }
             
         }
