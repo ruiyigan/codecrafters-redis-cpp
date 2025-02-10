@@ -124,7 +124,7 @@ private:
                     | ((uint64_t)buff_expiry[1] << 8)
                     | ((uint64_t)buff_expiry[2] << 16)
                     | ((uint64_t)buff_expiry[3] << 24);
-                    expiry_time = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_s));
+                    expiry_time = std::chrono::system_clock::time_point(std::chrono::seconds(expiry_s));
                 }
 
                 if (static_cast<unsigned char>(ch) == 0x00) {
