@@ -127,14 +127,12 @@ private:
         }
 
         char ch;
-        std::string current_string;
         uint64_t size;
         uint64_t size_with_expiry;
         bool is_database = false;
         while (file.get(ch)) {
-            // each ch is 1 byte in size
-            // so can use this to detect headers and then segment them
-            if (static_cast<unsigned char>(ch) == 0xFB && !is_database) {
+            unsigned char byte = static_cast<unsigned char>(ch);
+            if (!is_database && byte == 0xFB) {
                 size = readDecodedSize(file);
                 size_with_expiry = readDecodedSize(file);
                 is_database = true;
