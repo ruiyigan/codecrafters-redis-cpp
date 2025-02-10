@@ -129,11 +129,11 @@ private:
         bool is_database = false;
         while (file.get(ch)) {
             unsigned char byte = static_cast<unsigned char>(ch);
-            if (static_cast<unsigned char>(ch) == 0xFB && !is_database) {
+            if (byte == 0xFB && !is_database) {
                 size = readDecodedSize(file);
                 size_with_expiry = readDecodedSize(file);
                 is_database = true;
-                continue;
+                file.get(ch);
             }
 
             if (is_database) { // means reached database section
