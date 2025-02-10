@@ -133,9 +133,7 @@ private:
                 size = readDecodedSize(file);
                 size_with_expiry = readDecodedSize(file);
                 is_database = true;
-                std::cout << "THIS IS RIGHT BEFORE THE THINGY " << ch << std::endl;
-                file.get(ch);
-                std::cout << "THIS IS RIGHT AFTER THE THINGY " << ch << std::endl;
+                continue;
             }
 
             if (is_database) { // means reached database section
