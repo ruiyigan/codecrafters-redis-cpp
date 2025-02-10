@@ -80,7 +80,7 @@ private:
             return;
         }
 
-        std::ifstream file(filepath);
+        std::ifstream file(filepath, std::ios::binary);
         if (!file.is_open()) {
             throw std::runtime_error("Could not open file: " + filepath);
         }
