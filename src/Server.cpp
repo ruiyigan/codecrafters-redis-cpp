@@ -136,7 +136,7 @@ private:
                 size = readDecodedSize(file);
                 size_with_expiry = readDecodedSize(file);
                 is_database = true;
-                continue;
+                file.get(ch);
             }
 
             if (is_database) { // means reached database section
