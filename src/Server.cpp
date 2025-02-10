@@ -132,8 +132,6 @@ private:
         bool is_database = false;
         while (file.get(ch)) {
             unsigned char byte = static_cast<unsigned char>(ch);
-            // each ch is 1 byte in size
-            // so can use this to detect headers and then segment them
             if (static_cast<unsigned char>(ch) == 0xFB && !is_database) {
                 size = readDecodedSize(file);
                 size_with_expiry = readDecodedSize(file);
