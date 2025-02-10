@@ -194,8 +194,10 @@ private:
                         if (it == storage_->end()) {
                         } else {
                             std::string stored_value = std::get<0>(it -> second);
-                            TimePoint expiry_time = std::get<1>(it->second);
-
+                            TimePoint expiry_time = std::get<1>(it -> second);
+                            
+                            std::cout << "TIME NOW at expiry FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
+                            std::cout << "TIME NOW..: " << std::chrono::system_clock::now().time_since_epoch().count() << std::endl;
                             if (std::chrono::system_clock::now() > expiry_time) {
                                 storage_->erase(it);
                             } else {
