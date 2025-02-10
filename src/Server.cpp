@@ -85,7 +85,6 @@ private:
             throw std::runtime_error("Could not open file: " + filepath);
         }
 
-        std::string result;
         char ch;
         std::string current_string;
         uint64_t size;
@@ -117,6 +116,7 @@ private:
                     | ((uint64_t)buff_expiry[7] << 56);
 
                     expiry_time = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
+                    file.get(ch);
                 } else if ((static_cast<unsigned char>(ch) == 0xFD)) {
                     // expiry in 4-byte unsigned integer, in little-endian (read right-to-left) seconds.
                     unsigned char buff_expiry[4];
@@ -126,6 +126,7 @@ private:
                     | ((uint64_t)buff_expiry[2] << 16)
                     | ((uint64_t)buff_expiry[3] << 24);
                     expiry_time = std::chrono::system_clock::time_point(std::chrono::seconds(expiry_s));
+                    file.get(ch);
                 }
 
                 if (static_cast<unsigned char>(ch) == 0x00) {
@@ -144,8 +145,6 @@ private:
                 } 
             }
             
-
-            result.push_back(ch);
         }
 
     }
