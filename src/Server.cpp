@@ -71,8 +71,11 @@ private:
         return length;
     }
     
-    TimePoint readExpiry(std::ifstream &file, unsigned char umarker) {
+    TimePoint readExpiry(std::ifstream &file) {
         TimePoint expiry = TimePoint::max();
+        char marker;
+        file.get(marker);
+        unsigned char umarker = static_cast<unsigned char>(marker);
         if (umarker == 0xFC) {
             // Read 8-byte expiry (milliseconds)
             unsigned char buff[8];
@@ -102,7 +105,6 @@ private:
         }
         return expiry;
     }
-
     std::string readString(std::ifstream &file) {
         int size = readDecodedSize(file);
         std::vector<char> buffer(size);
@@ -127,35 +129,43 @@ private:
         uint64_t size;
         uint64_t size_with_expiry;
         bool is_database = false;
+        char ch;
         while (file.get(ch)) {
             unsigned char byte = static_cast<unsigned char>(ch);
-            if (byte == 0xFB && !is_database) {
-                size = readDecodedSize(file);
-                size_with_expiry = readDecodedSize(file);
+            // Look for the database header (0xFB) only once.
+            if (!is_database && byte == 0xFB) {
+                // Read additional size fields (even if you don't use them immediately)
+                uint64_t size = readDecodedSize(file);
+                uint64_t size_with_expiry = readDecodedSize(file);
                 is_database = true;
-                continue;
+                continue; // move to the next marker in the file
             }
-
-            if (is_database) { // means reached database section
+    
+            if (is_database) {
+                // We expect now either an expiry marker or the key-value marker.
+                // Peek at the next byte without consuming it.
+                unsigned char marker = file.peek();
                 TimePoint expiry_time = TimePoint::max();
-                if ((static_cast<unsigned char>(ch) == 0xFC)) {
-                    expiry_time = readExpiry(file, 0xFC);
-                    file.get(ch);
-                } else if ((static_cast<unsigned char>(ch) == 0xFD)) {
-                    expiry_time = readExpiry(file, 0xFD);
-                    file.get(ch);
+                if (marker == 0xFC || marker == 0xFD) {
+                    expiry_time = readExpiry(file);
+                    // After reading expiry, the next marker should be the key/value indicator.
+                    marker = file.peek();
                 }
-
-                if (static_cast<unsigned char>(ch) == 0x00) {
+                if (marker == 0x00) {
+                    // Consume the key/value marker.
+                    file.get(ch);
                     std::string key = readString(file);
-                    std::string value = readString(file);   
-                    std::cout << "KEY FROM RDB..: " << key << std::endl;
-                    std::cout << "VALUE FROM RDB..: " << value << std::endl;
-                    std::cout << "EXPIRY FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
+                    std::string value = readString(file);
+                    std::cout << "KEY FROM RDB: " << key << std::endl;
+                    std::cout << "VALUE FROM RDB: " << value << std::endl;
+                    std::cout << "EXPIRY FROM RDB: " << expiry_time.time_since_epoch().count() << std::endl;
                     (*storage_)[key] = std::make_tuple(value, expiry_time);
-                } 
+                } else {
+                    // Unknown marker; you might want to handle this case.
+                    std::cerr << "Unexpected marker: " << static_cast<int>(marker) << std::endl;
+                    file.get(ch); // consume unknown byte
+                }
             }
-            
         }
     }
 
