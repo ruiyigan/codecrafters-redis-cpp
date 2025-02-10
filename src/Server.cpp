@@ -138,7 +138,7 @@ private:
                     std::string value(reinterpret_cast<const char*>(buff_value), size_value);
                     std::cout << "KEY FROM RDB..: " << key << std::endl;
                     std::cout << "VALUE FROM RDB..: " << value << std::endl;
-                    std::cout << "EXPIRY FROM RDB..: " << expiry_time << std::endl;
+                    std::cout << "EXPIRY FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
                     (*storage_)[key] = std::make_tuple(value, expiry_time);
                 } 
             }
