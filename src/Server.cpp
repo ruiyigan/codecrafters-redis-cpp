@@ -155,6 +155,9 @@ private:
                     std::cout << "VALUE FROM RDB: " << value << std::endl;
                     std::cout << "EXPIRY FROM RDB: " << expiry_time.time_since_epoch().count() << std::endl;
                     (*storage_)[key] = std::make_tuple(value, expiry_time);
+                } else {
+                    std::cerr << "Unexpected marker: " << static_cast<int>(marker) << std::endl;
+                    file.get(ch);
                 }
             }
             
