@@ -71,11 +71,8 @@ private:
         return length;
     }
     
-    TimePoint readExpiry(std::ifstream &file) {
+    TimePoint readExpiry(std::ifstream &file, unsigned char umarker) {
         TimePoint expiry = TimePoint::max();
-        char marker;
-        file.get(marker); // consume marker (prev just peeked only)
-        unsigned char umarker = static_cast<unsigned char>(marker);
         if (umarker == 0xFC) {
             // Read 8-byte expiry (milliseconds)
             unsigned char buff[8];
@@ -136,20 +133,39 @@ private:
                 size = readDecodedSize(file);
                 size_with_expiry = readDecodedSize(file);
                 is_database = true;
-                // file.get(ch);
+                file.get(ch);
             }
 
             if (is_database) { // means reached database section
                 TimePoint expiry_time = TimePoint::max();
-                unsigned char marker = file.peek();
-                if (marker == 0xFC || marker == 0xFD) {
-                    expiry_time = readExpiry(file);
-                    // After reading expiry, the next marker should be the key/value indicator.
-                    marker = file.peek();
+                if ((static_cast<unsigned char>(ch) == 0xFC)) {
+                    // expiry in 8-byte unsigned long, in little-endian (read right-to-left) milliseconds.
+                    unsigned char buff_expiry[8];
+                    file.read(reinterpret_cast<char*>(buff_expiry), 8);
+                    auto expiry_ms = (uint64_t)buff_expiry[0]
+                    | ((uint64_t)buff_expiry[1] << 8)
+                    | ((uint64_t)buff_expiry[2] << 16)
+                    | ((uint64_t)buff_expiry[3] << 24)
+                    | ((uint64_t)buff_expiry[4] << 32)
+                    | ((uint64_t)buff_expiry[5] << 40)
+                    | ((uint64_t)buff_expiry[6] << 48)
+                    | ((uint64_t)buff_expiry[7] << 56);
+
+                    expiry_time = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
+                    file.get(ch);
+                } else if ((static_cast<unsigned char>(ch) == 0xFD)) {
+                    // expiry in 4-byte unsigned integer, in little-endian (read right-to-left) seconds.
+                    unsigned char buff_expiry[4];
+                    file.read(reinterpret_cast<char*>(buff_expiry), 4);
+                    auto expiry_s = (uint64_t)buff_expiry[0]
+                    | ((uint64_t)buff_expiry[1] << 8)
+                    | ((uint64_t)buff_expiry[2] << 16)
+                    | ((uint64_t)buff_expiry[3] << 24);
+                    expiry_time = std::chrono::system_clock::time_point(std::chrono::seconds(expiry_s));
+                    file.get(ch);
                 }
 
-                if (marker == 0x00) {
-                    file.get(ch);
+                if (static_cast<unsigned char>(ch) == 0x00) {
                     std::string key = readString(file);
                     std::string value = readString(file);   
                     std::cout << "KEY FROM RDB..: " << key << std::endl;
