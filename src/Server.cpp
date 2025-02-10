@@ -9,8 +9,8 @@
 #include <filesystem>
 
 using asio::ip::tcp;  
-using TimePoint = std::chrono::steady_clock::time_point;
-using StorageType = std::unordered_map<std::string, std::tuple<std::string, std::chrono::steady_clock::time_point>>;
+using TimePoint = std::chrono::system_clock::time_point;
+using StorageType = std::unordered_map<std::string, std::tuple<std::string, TimePoint>>;
 
 // Session handles each client connection. Inherits from enable_shared_from_this
 // to allow safe shared_ptr management in async callbacks
@@ -101,7 +101,7 @@ private:
             }
 
             if (is_database) { // means reached database section
-                std::chrono::steady_clock::time_point expiry_time = TimePoint::max();
+                TimePoint expiry_time = TimePoint::max();
                 if ((static_cast<unsigned char>(ch) == 0xFC)) {
                     // expiry in 8-byte unsigned long, in little-endian (read right-to-left) milliseconds.
                     unsigned char buff_expiry[8];
@@ -115,7 +115,7 @@ private:
                     | ((uint64_t)buff_expiry[6] << 48)
                     | ((uint64_t)buff_expiry[7] << 56);
 
-                    expiry_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(expiry_ms);
+                    expiry_time = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
                 } else if ((static_cast<unsigned char>(ch) == 0xFD)) {
                     // expiry in 4-byte unsigned integer, in little-endian (read right-to-left) seconds.
                     unsigned char buff_expiry[4];
@@ -124,7 +124,7 @@ private:
                     | ((uint64_t)buff_expiry[1] << 8)
                     | ((uint64_t)buff_expiry[2] << 16)
                     | ((uint64_t)buff_expiry[3] << 24);
-                    expiry_time = std::chrono::steady_clock::now() + std::chrono::seconds(expiry_s);
+                    expiry_time = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_s));
                 }
 
                 if (static_cast<unsigned char>(ch) == 0x00) {
@@ -177,7 +177,7 @@ private:
                         std::time_t expiry_time = 0;
                         if (split_data.size() >= 11 && split_data[8] == "px") {
                             int expiry_ms = std::stoi(split_data[10]); // milliseconds
-                            auto expiry_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(expiry_ms);
+                            auto expiry_time = std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_ms);
                             (*storage_)[key] = std::make_tuple(value, expiry_time);
                         } else {
                             // Use a distant future time if no expiry is specified
@@ -196,7 +196,7 @@ private:
                             std::string stored_value = std::get<0>(it -> second);
                             TimePoint expiry_time = std::get<1>(it->second);
 
-                            if (std::chrono::steady_clock::now() > expiry_time) {
+                            if (std::chrono::system_clock::now() > expiry_time) {
                                 storage_->erase(it);
                             } else {
                                 messages.push_back(stored_value);
