@@ -94,12 +94,6 @@ private:
         while (file.get(ch)) {
             // each ch is 1 byte in size
             // so can use this to detect headers and then segment them
-            if (static_cast<unsigned char>(ch) == 0xFB) {
-                size = readDecodedSize(file);
-                size_with_expiry = readDecodedSize(file);
-                is_database = true;
-            }
-
             if (is_database) { // means reached database section
                 TimePoint expiry_time = TimePoint::max();
                 if ((static_cast<unsigned char>(ch) == 0xFC)) {
@@ -143,6 +137,12 @@ private:
                 } 
             }
             
+            if (static_cast<unsigned char>(ch) == 0xFB) {
+                size = readDecodedSize(file);
+                size_with_expiry = readDecodedSize(file);
+                is_database = true;
+            }
+
 
             result.push_back(ch);
         }
