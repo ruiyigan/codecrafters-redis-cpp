@@ -155,10 +155,21 @@ private:
                 }
                 if (marker == 0x00) {
                     file.get(ch);
-                    std::string key = readString(file);
-                    std::string value = readString(file);
-                    std::cout << "KEY FROM RDB: " << key << std::endl;
-                    std::cout << "VALUE FROM RDB: " << value << std::endl;
+                    // std::string key = readString(file);
+                    // std::string value = readString(file);
+                    // std::cout << "KEY FROM RDB: " << key << std::endl;
+                    // std::cout << "VALUE FROM RDB: " << value << std::endl;
+                    // (*storage_)[key] = std::make_tuple(value, expiry_time);
+                    int size_key = readDecodedSize(file);
+                    unsigned char buff_key[size_key];
+                    file.read(reinterpret_cast<char*>(buff_key), size_key);
+                    std::string key(reinterpret_cast<const char*>(buff_key), size_key);
+                    int size_value = readDecodedSize(file);
+                    unsigned char buff_value[size_value];
+                    file.read(reinterpret_cast<char*>(buff_value), size_value);
+                    std::string value(reinterpret_cast<const char*>(buff_value), size_value);
+                    std::cout << "KEY FROM RDB..: " << key << std::endl;
+                    std::cout << "VALUE FROM RDB..: " << value << std::endl;
                     (*storage_)[key] = std::make_tuple(value, expiry_time);
                 } else {
                     file.get(ch);
