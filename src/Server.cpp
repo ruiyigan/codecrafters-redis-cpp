@@ -138,30 +138,45 @@ private:
         uint64_t size_with_expiry;
         bool is_database = false;
         while (file.get(ch)) {
-            unsigned char byte = static_cast<unsigned char>(ch);
-            if (!is_database && byte == 0xFB) {
-                uint64_t size = readDecodedSize(file);
-                uint64_t size_with_expiry = readDecodedSize(file);
+            // each ch is 1 byte in size
+            // so can use this to detect headers and then segment them
+            if (static_cast<unsigned char>(ch) == 0xFB && !is_database) {
+                size = readDecodedSize(file);
+                size_with_expiry = readDecodedSize(file);
                 is_database = true;
-                continue;
+                file.get(ch);
             }
 
             if (is_database) { // means reached database section
-                unsigned char marker = file.peek(); // look without consuming
                 TimePoint expiry_time = TimePoint::max();
-                std::cout << "ME HERE " << std::endl;
-                if (marker == 0xFC || marker == 0xFD) {
-                    expiry_time = readExpiry(file);
-                    marker = file.peek();
-                }
-                if (marker == 0x00) {
-                    std::cout << "ME HERE in the x00 " << std::endl;
+                if ((static_cast<unsigned char>(ch) == 0xFC)) {
+                    // expiry in 8-byte unsigned long, in little-endian (read right-to-left) milliseconds.
+                    unsigned char buff_expiry[8];
+                    file.read(reinterpret_cast<char*>(buff_expiry), 8);
+                    auto expiry_ms = (uint64_t)buff_expiry[0]
+                    | ((uint64_t)buff_expiry[1] << 8)
+                    | ((uint64_t)buff_expiry[2] << 16)
+                    | ((uint64_t)buff_expiry[3] << 24)
+                    | ((uint64_t)buff_expiry[4] << 32)
+                    | ((uint64_t)buff_expiry[5] << 40)
+                    | ((uint64_t)buff_expiry[6] << 48)
+                    | ((uint64_t)buff_expiry[7] << 56);
+
+                    expiry_time = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
                     file.get(ch);
-                    // std::string key = readString(file);
-                    // std::string value = readString(file);
-                    // std::cout << "KEY FROM RDB: " << key << std::endl;
-                    // std::cout << "VALUE FROM RDB: " << value << std::endl;
-                    // (*storage_)[key] = std::make_tuple(value, expiry_time);
+                } else if ((static_cast<unsigned char>(ch) == 0xFD)) {
+                    // expiry in 4-byte unsigned integer, in little-endian (read right-to-left) seconds.
+                    unsigned char buff_expiry[4];
+                    file.read(reinterpret_cast<char*>(buff_expiry), 4);
+                    auto expiry_s = (uint64_t)buff_expiry[0]
+                    | ((uint64_t)buff_expiry[1] << 8)
+                    | ((uint64_t)buff_expiry[2] << 16)
+                    | ((uint64_t)buff_expiry[3] << 24);
+                    expiry_time = std::chrono::system_clock::time_point(std::chrono::seconds(expiry_s));
+                    file.get(ch);
+                }
+
+                if (static_cast<unsigned char>(ch) == 0x00) {
                     int size_key = readDecodedSize(file);
                     unsigned char buff_key[size_key];
                     file.read(reinterpret_cast<char*>(buff_key), size_key);
@@ -172,14 +187,12 @@ private:
                     std::string value(reinterpret_cast<const char*>(buff_value), size_value);
                     std::cout << "KEY FROM RDB..: " << key << std::endl;
                     std::cout << "VALUE FROM RDB..: " << value << std::endl;
+                    std::cout << "EXPIRY FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
                     (*storage_)[key] = std::make_tuple(value, expiry_time);
-                } else {
-                    file.get(ch);
-                }
+                } 
             }
             
         }
-
     }
 
     void read() {
