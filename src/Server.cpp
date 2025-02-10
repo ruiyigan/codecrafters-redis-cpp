@@ -127,7 +127,6 @@ private:
 
         char ch;
         bool is_database = false;
-        char ch;
         while (file.get(ch)) {
             unsigned char byte = static_cast<unsigned char>(ch);
             // Look for the database header (0xFB) only once.
