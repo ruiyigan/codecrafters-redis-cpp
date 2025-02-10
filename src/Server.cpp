@@ -85,7 +85,6 @@ private:
             throw std::runtime_error("Could not open file: " + filepath);
         }
 
-        std::string result;
         char ch;
         std::string current_string;
         uint64_t size;
@@ -95,6 +94,8 @@ private:
             // each ch is 1 byte in size
             // so can use this to detect headers and then segment them
             if (is_database) { // means reached database section
+                std::cout << "char after database part: " << ch << std::endl;
+
                 TimePoint expiry_time = TimePoint::max();
                 if ((static_cast<unsigned char>(ch) == 0xFC)) {
                     // expiry in 8-byte unsigned long, in little-endian (read right-to-left) milliseconds.
@@ -130,9 +131,9 @@ private:
                     unsigned char buff_value[size_value];
                     file.read(reinterpret_cast<char*>(buff_value), size_value);
                     std::string value(reinterpret_cast<const char*>(buff_value), size_value);
-                    std::cout << "KEY FROM RDB..: " << key << std::endl;
-                    std::cout << "VALUE FROM RDB..: " << value << std::endl;
-                    std::cout << "EXPIRY FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
+                    std::cout << "KEY FROM RDB: " << key << std::endl;
+                    std::cout << "VALUE FROM RDB: " << value << std::endl;
+                    std::cout << "EXPIRY FROM RDB: " << expiry_time.time_since_epoch().count() << std::endl;
                     (*storage_)[key] = std::make_tuple(value, expiry_time);
                 } 
             }
@@ -142,9 +143,8 @@ private:
                 size_with_expiry = readDecodedSize(file);
                 is_database = true;
             }
+            std::cout << "char right after database true: " << ch << std::endl;
 
-
-            result.push_back(ch);
         }
 
     }
