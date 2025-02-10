@@ -149,11 +149,13 @@ private:
             if (is_database) { // means reached database section
                 unsigned char marker = file.peek(); // look without consuming
                 TimePoint expiry_time = TimePoint::max();
+                std::cout << "ME HERE " << std::endl;
                 if (marker == 0xFC || marker == 0xFD) {
                     expiry_time = readExpiry(file);
                     marker = file.peek();
                 }
                 if (marker == 0x00) {
+                    std::cout << "ME HERE in the x00 " << std::endl;
                     file.get(ch);
                     // std::string key = readString(file);
                     // std::string value = readString(file);
