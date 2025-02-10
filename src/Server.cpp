@@ -107,10 +107,16 @@ private:
     }
 
     std::string readString(std::ifstream &file) {
+        // int size = readDecodedSize(file);
+        // std::vector<char> buffer(size);
+        // file.read(buffer.data(), size);
+        // return std::string(buffer.data(), size);
         int size = readDecodedSize(file);
-        std::vector<char> buffer(size);
-        file.read(buffer.data(), size);
-        return std::string(buffer.data(), size);
+        unsigned char buff[size];
+        file.read(reinterpret_cast<char*>(buff), size);
+        std::string data(reinterpret_cast<const char*>(buff), size);
+        return data;
+
     }
 
     void readFile(const std::string& dir, const std::string& filename, std::shared_ptr<StorageType> storage_) {
