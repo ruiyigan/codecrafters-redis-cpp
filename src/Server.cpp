@@ -138,7 +138,8 @@ private:
 
             if (is_database) { // means reached database section
                 TimePoint expiry_time = TimePoint::max();
-                if ((static_cast<unsigned char>(ch) == 0xFC)) {
+                unsigned char marker = file.peek();
+                if (marker == 0xFC) {
                     // expiry in 8-byte unsigned long, in little-endian (read right-to-left) milliseconds.
                     unsigned char buff_expiry[8];
                     file.read(reinterpret_cast<char*>(buff_expiry), 8);
@@ -153,7 +154,7 @@ private:
 
                     expiry_time = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
                     file.get(ch);
-                } else if ((static_cast<unsigned char>(ch) == 0xFD)) {
+                } else if (marker == 0xFD) {
                     // expiry in 4-byte unsigned integer, in little-endian (read right-to-left) seconds.
                     unsigned char buff_expiry[4];
                     file.read(reinterpret_cast<char*>(buff_expiry), 4);
