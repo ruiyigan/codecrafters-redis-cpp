@@ -107,16 +107,10 @@ private:
     }
 
     std::string readString(std::ifstream &file) {
-        // int size = readDecodedSize(file);
-        // std::vector<char> buffer(size);
-        // file.read(buffer.data(), size);
-        // return std::string(buffer.data(), size);
         int size = readDecodedSize(file);
-        unsigned char buff[size];
-        file.read(reinterpret_cast<char*>(buff), size);
-        std::string data(reinterpret_cast<const char*>(buff), size);
-        return data;
-
+        std::vector<char> buffer(size);
+        file.read(buffer.data(), size);
+        return std::string(buffer.data(), size);
     }
 
     void readFile(const std::string& dir, const std::string& filename, std::shared_ptr<StorageType> storage_) {
@@ -177,14 +171,8 @@ private:
                 }
 
                 if (static_cast<unsigned char>(ch) == 0x00) {
-                    int size_key = readDecodedSize(file);
-                    unsigned char buff_key[size_key];
-                    file.read(reinterpret_cast<char*>(buff_key), size_key);
-                    std::string key(reinterpret_cast<const char*>(buff_key), size_key);
-                    int size_value = readDecodedSize(file);
-                    unsigned char buff_value[size_value];
-                    file.read(reinterpret_cast<char*>(buff_value), size_value);
-                    std::string value(reinterpret_cast<const char*>(buff_value), size_value);
+                    std::string key = readString(file);
+                    std::string value = readString(file);   
                     std::cout << "KEY FROM RDB..: " << key << std::endl;
                     std::cout << "VALUE FROM RDB..: " << value << std::endl;
                     std::cout << "EXPIRY FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
