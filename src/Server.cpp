@@ -126,8 +126,6 @@ private:
         }
 
         char ch;
-        uint64_t size;
-        uint64_t size_with_expiry;
         bool is_database = false;
         char ch;
         while (file.get(ch)) {
