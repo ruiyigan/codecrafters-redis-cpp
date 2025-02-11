@@ -21,8 +21,9 @@ public:
         tcp::socket socket, 
         std::shared_ptr<StorageType> storage,
         std::string dir,
-        std::string dbfilename
-    ) : socket_(std::move(socket)), storage_(storage), dir_(dir), dbfilename_(dbfilename) {}
+        std::string dbfilename,
+        std::string masterdetails
+    ) : socket_(std::move(socket)), storage_(storage), dir_(dir), dbfilename_(dbfilename), masterdetails_(masterdetails) {}
     // Start the session's async operations
     void start() {
         read();  // Initiate first read
@@ -230,7 +231,11 @@ private:
                         include_size = true;
                     }
                     else if (split_data[2] == "INFO") {
-                        messages.push_back("role:master");
+                        if (masterdetails_ == "") {
+                            messages.push_back("role:master");
+                        } else {
+                            messages.push_back("role:slave");
+                        }
                     }
                     else {
                         messages.push_back("PONG");
@@ -281,21 +286,23 @@ private:
     std::shared_ptr<StorageType> storage_; // shared acrosss sessions
     std::string dir_;
     std::string dbfilename_;
+    std::string masterdetails_;
 };
 
 void accept_connections(
         tcp::acceptor& acceptor, 
         std::shared_ptr<StorageType> storage,
         std::string dir,
-        std::string dbfilename
+        std::string dbfilename,
+        std::string masterdetails
     ) {
     acceptor.async_accept(
-        [&acceptor, storage, dir, dbfilename](asio::error_code ec, tcp::socket socket) {
+        [&acceptor, storage, dir, dbfilename, masterdetails](asio::error_code ec, tcp::socket socket) {
             if (!ec) {
-                std::make_shared<Session>(std::move(socket), storage, dir, dbfilename)->start();
+                std::make_shared<Session>(std::move(socket), storage, dir, dbfilename, masterdetails)->start();
                 std::cout << "Client connected" << std::endl;
             }
-            accept_connections(acceptor, storage, dir, dbfilename); // recursion
+            accept_connections(acceptor, storage, dir, dbfilename, masterdetails); // recursion
         });
 }
 
@@ -305,6 +312,7 @@ int main(int argc, char* argv[]) {
         std::string dir;
         std::string dbfilename;
         int portnumber = 6379;
+        std::string masterdetails = "";
 
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -320,6 +328,10 @@ int main(int argc, char* argv[]) {
             if (arg == "--port") {
                 portnumber = std::stoi(argv[i + 1]);
             }
+
+            if (arg == "--replicaof") {
+                masterdetails = argv[i + 1];
+            }
         }
         
         // Create acceptor listening on port 6379 if not specified
@@ -328,7 +340,7 @@ int main(int argc, char* argv[]) {
         auto storage = std::make_shared<StorageType>();  // Use tuple storage
 
         // Start accepting connections
-        accept_connections(acceptor, storage, dir, dbfilename);
+        accept_connections(acceptor, storage, dir, dbfilename, masterdetails);
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
         
         // Run the I/O service - blocks until all work is done
