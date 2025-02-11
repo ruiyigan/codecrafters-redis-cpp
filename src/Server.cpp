@@ -232,8 +232,14 @@ private:
                     }
                     else if (split_data[2] == "INFO") {
                         if (masterdetails_ == "") {
-                            messages.push_back("role:master");
+                            // master
+                            std::string role = "role:master";
+                            std::string master_repl_offset = "nmaster_repl_offset";
+                            std::string nmaster_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+                            std::string message = role + "\r\n" + master_repl_offset + "\r\n" + nmaster_replid;
+                            messages.push_back(message);
                         } else {
+                            // not master
                             messages.push_back("role:slave");
                         }
                     }
