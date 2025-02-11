@@ -229,6 +229,9 @@ private:
                         }
                         include_size = true;
                     }
+                    else if (split_data[2] == "INFO") {
+                        messages.push_back("role:master");
+                    }
                     else {
                         messages.push_back("PONG");
                     }
@@ -261,7 +264,7 @@ private:
         std::string msg = msg_stream.str();
         
 
-        std::cout << "MESSAGE..: " << msg << std::endl;
+        std::cout << "MESSAGE SENT..: " << msg << std::endl;
         // Async write operation
         asio::async_write(socket_, asio::buffer(msg, msg.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
@@ -326,7 +329,7 @@ int main(int argc, char* argv[]) {
 
         // Start accepting connections
         accept_connections(acceptor, storage, dir, dbfilename);
-        std::cout << "Server listening on port" << portnumber << "..." << std::endl;
+        std::cout << "Server listening on port " << portnumber << "..." << std::endl;
         
         // Run the I/O service - blocks until all work is done
         io_context.run();
