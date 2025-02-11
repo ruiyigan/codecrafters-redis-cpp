@@ -301,6 +301,7 @@ int main(int argc, char* argv[]) {
         asio::io_context io_context;
         std::string dir;
         std::string dbfilename;
+        int portnumber = 6379;
 
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -312,16 +313,20 @@ int main(int argc, char* argv[]) {
             if (arg == "--dbfilename") {
                 dbfilename = argv[i + 1];
             }
+
+            if (arg == "--port") {
+                portnumber = std::stoi(argv[i + 1]);
+            }
         }
         
-        // Create acceptor listening on port 6379 (IPv4)
-        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 6379));
+        // Create acceptor listening on port 6379 if not specified
+        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), portnumber));
         
         auto storage = std::make_shared<StorageType>();  // Use tuple storage
 
         // Start accepting connections
         accept_connections(acceptor, storage, dir, dbfilename);
-        std::cout << "Server listening on port 6379..." << std::endl;
+        std::cout << "Server listening on port" << portnumber << "..." << std::endl;
         
         // Run the I/O service - blocks until all work is done
         io_context.run();
