@@ -234,8 +234,8 @@ private:
                         if (masterdetails_ == "") {
                             // master
                             std::string role = "role:master";
-                            std::string master_repl_offset = "nmaster_repl_offset";
-                            std::string nmaster_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+                            std::string master_repl_offset = "nmaster_repl_offset:0";
+                            std::string nmaster_replid = "nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
                             std::string message = role + "\r\n" + master_repl_offset + "\r\n" + nmaster_replid;
                             messages.push_back(message);
                         } else {
