@@ -312,6 +312,13 @@ void accept_connections(
         });
 }
 
+std::pair<std::string, std::string> parseHostPort(const std::string& masterdetails) {
+    std::istringstream iss(masterdetails);
+    std::string host, port;
+    iss >> host >> port;
+    return {host, port};
+}
+
 int main(int argc, char* argv[]) {
     try {
         asio::io_context io_context;
@@ -348,6 +355,45 @@ int main(int argc, char* argv[]) {
         // Start accepting connections
         accept_connections(acceptor, storage, dir, dbfilename, masterdetails);
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
+
+        if (!masterdetails.empty()) {
+            auto [masterHost, masterPort] = parseHostPort(masterdetails);
+
+            auto master_socket = std::make_shared<tcp::socket>(io_context);
+
+            // We also need a resolver if we only have "host"/"port" strings
+            tcp::resolver resolver(io_context);
+            auto endpoints = resolver.resolve(masterHost, masterPort);
+
+            // Async connect to the master
+            asio::async_connect(
+                *master_socket, 
+                endpoints,
+                [master_socket](asio::error_code ec, tcp::endpoint /*ep*/) {
+                    if (!ec) {
+                        std::cout << "Connected to master. Now sending PING..." << std::endl;
+                        // Build the RESP PING command:
+                        // *1\r\n$4\r\nPING\r\n
+                        std::string ping_cmd = "*1\r\n$4\r\nPING\r\n";
+
+                        asio::async_write(
+                            *master_socket, 
+                            asio::buffer(ping_cmd),
+                            [master_socket](asio::error_code write_ec, std::size_t /*length*/) {
+                                if (!write_ec) {
+                                    std::cout << "PING command sent successfully to master!" << std::endl;
+                                } else {
+                                    std::cerr << "Error sending PING to master: " 
+                                              << write_ec.message() << std::endl;
+                                }
+                            }
+                        );
+                    } else {
+                        std::cerr << "Error connecting to master: " << ec.message() << std::endl;
+                    }
+                }
+            );
+        }
         
         // Run the I/O service - blocks until all work is done
         io_context.run();
