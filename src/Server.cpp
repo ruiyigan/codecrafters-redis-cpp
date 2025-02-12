@@ -361,7 +361,6 @@ int main(int argc, char* argv[]) {
 
             auto master_socket = std::make_shared<tcp::socket>(io_context);
 
-            // We also need a resolver if we only have "host"/"port" strings
             tcp::resolver resolver(io_context);
             auto endpoints = resolver.resolve(masterHost, masterPort);
 
@@ -372,8 +371,6 @@ int main(int argc, char* argv[]) {
                 [master_socket](asio::error_code ec, tcp::endpoint /*ep*/) {
                     if (!ec) {
                         std::cout << "Connected to master. Now sending PING..." << std::endl;
-                        // Build the RESP PING command:
-                        // *1\r\n$4\r\nPING\r\n
                         std::string ping_cmd = "*1\r\n$4\r\nPING\r\n";
 
                         asio::async_write(
