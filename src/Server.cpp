@@ -360,7 +360,6 @@ int main(int argc, char* argv[]) {
             auto [masterHost, masterPort] = parseHostPort(masterdetails);
 
             auto master_socket = std::make_shared<tcp::socket>(io_context);
-
             tcp::resolver resolver(io_context);
             auto endpoints = resolver.resolve(masterHost, masterPort);
 
@@ -379,14 +378,14 @@ int main(int argc, char* argv[]) {
                             [master_socket](asio::error_code write_ec, std::size_t /*length*/) {
                                 if (!write_ec) {
                                     std::cout << "PING command sent successfully to master!" << std::endl;
-                                    auto ping_buffer = std::make_shared<std::string>();
+                                    auto second_buffer = std::make_shared<std::string>();
                                     asio::async_read_until(
                                         *master_socket, 
-                                        asio::dynamic_buffer(*ping_buffer),
+                                        asio::dynamic_buffer(*second_buffer),
                                         "\r\n", 
-                                        [master_socket, ping_buffer](asio::error_code read_ec, std::size_t length) {
+                                        [master_socket, second_buffer](asio::error_code read_ec, std::size_t length) {
                                         if (!read_ec) {
-                                            std::string response = ping_buffer->substr(0, length);
+                                            std::string response = second_buffer->substr(0, length);
                                             std::cout << "Received from master after PING: " << response << std::endl;
                                             std::string first_replconf = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n";
                                             asio::async_write(
@@ -403,6 +402,13 @@ int main(int argc, char* argv[]) {
                                                             [master_socket](asio::error_code write_ec3, std::size_t /*length*/) {
                                                                 if (!write_ec3) {
                                                                     std::cout << "second_replconf command sent successfully to master!" << std::endl;
+                                                                    auto third_buffer = std::make_shared<std::string>();
+                                                                    asio::async_read_until(
+                                                                        *master_socket, 
+                                                                        asio::dynamic_buffer(*third_buffer),
+                                                                        "\r\n", 
+                                                                        [master_socket, third_buffer](asio::error_code read_ec, std::size_t length) {
+                                                                    });
                                                                 } else {
                                                                     std::cerr << "Error sending second_replconf to master: " 
                                                                               << write_ec3.message() << std::endl;
