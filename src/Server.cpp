@@ -379,10 +379,14 @@ int main(int argc, char* argv[]) {
                             [master_socket](asio::error_code write_ec, std::size_t /*length*/) {
                                 if (!write_ec) {
                                     std::cout << "PING command sent successfully to master!" << std::endl;
-                                    auto ping_buffer = std::make_shared<std::array<char, 1024>>();
-                                    asio::async_read(*master_socket, asio::buffer(*ping_buffer), [master_socket, ping_buffer](asio::error_code read_ec, std::size_t length) {
+                                    auto ping_buffer = std::make_shared<std::string>();
+                                    asio::async_read_until(
+                                        *master_socket, 
+                                        asio::dynamic_buffer(*ping_buffer),
+                                        "\r\n", 
+                                        [master_socket, ping_buffer](asio::error_code read_ec, std::size_t length) {
                                         if (!read_ec) {
-                                            std::string response(ping_buffer->data(), length);
+                                            std::string response = ping_buffer->substr(0, length);
                                             std::cout << "Received from master after PING: " << response << std::endl;
                                             std::string first_replconf = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n";
                                             asio::async_write(
