@@ -379,6 +379,32 @@ int main(int argc, char* argv[]) {
                             [master_socket](asio::error_code write_ec, std::size_t /*length*/) {
                                 if (!write_ec) {
                                     std::cout << "PING command sent successfully to master!" << std::endl;
+                                    std::string first_replconf = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n";
+                                    asio::async_write(
+                                        *master_socket, 
+                                        asio::buffer(first_replconf),
+                                        [master_socket](asio::error_code write_ec, std::size_t /*length*/) {
+                                            if (!write_ec) {
+                                                std::cout << "first_replconf command sent successfully to master!" << std::endl;
+                                                std::string second_replconf = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+                                                asio::async_write(
+                                                    *master_socket, 
+                                                    asio::buffer(second_replconf),
+                                                    [master_socket](asio::error_code write_ec, std::size_t /*length*/) {
+                                                        if (!write_ec) {
+                                                            std::cout << "second_replconf command sent successfully to master!" << std::endl;
+                                                        } else {
+                                                            std::cerr << "Error sending second_replconf to master: " 
+                                                                    << write_ec.message() << std::endl;
+                                                        }
+                                                    }
+                                                );
+                                            } else {
+                                                std::cerr << "Error sending first_replconf to master: " 
+                                                          << write_ec.message() << std::endl;
+                                            }
+                                        }
+                                    );
                                 } else {
                                     std::cerr << "Error sending PING to master: " 
                                               << write_ec.message() << std::endl;
@@ -386,33 +412,8 @@ int main(int argc, char* argv[]) {
                             }
                         );
 
-                        std::string first_replconf = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n";
-                        asio::async_write(
-                            *master_socket, 
-                            asio::buffer(first_replconf),
-                            [master_socket](asio::error_code write_ec, std::size_t /*length*/) {
-                                if (!write_ec) {
-                                    std::cout << "first_replconf command sent successfully to master!" << std::endl;
-                                } else {
-                                    std::cerr << "Error sending first_replconf to master: " 
-                                              << write_ec.message() << std::endl;
-                                }
-                            }
-                        );
 
-                        std::string second_replconf = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
-                        asio::async_write(
-                            *master_socket, 
-                            asio::buffer(second_replconf),
-                            [master_socket](asio::error_code write_ec, std::size_t /*length*/) {
-                                if (!write_ec) {
-                                    std::cout << "second_replconf command sent successfully to master!" << std::endl;
-                                } else {
-                                    std::cerr << "Error sending second_replconf to master: " 
-                                              << write_ec.message() << std::endl;
-                                }
-                            }
-                        );
+                        
                     } else {
                         std::cerr << "Error connecting to master: " << ec.message() << std::endl;
                     }
