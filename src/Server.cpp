@@ -470,9 +470,8 @@ int main(int argc, char* argv[]) {
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
 
         if (!masterdetails.empty()) {
-            ReplicationClient replicationClient(io_context, masterdetails);
-            std::cout << "replicationClient fired??." << std::endl;
-            replicationClient.start();
+            auto replicationClient = std::make_shared<ReplicationClient>(io_context, masterdetails);
+            replicationClient->start();
         }
         
         // Run the I/O service - blocks until all work is done
