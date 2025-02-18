@@ -469,8 +469,10 @@ int main(int argc, char* argv[]) {
         accept_connections(acceptor, storage, dir, dbfilename, masterdetails);
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
 
+        std::shared_ptr<ReplicationClient> replicationClient;
         if (!masterdetails.empty()) {
-            auto replicationClient = std::make_shared<ReplicationClient>(io_context, masterdetails);
+            replicationClient = std::make_shared<ReplicationClient>(io_context, masterdetails);
+            std::cout << "replicationClient fired??." << std::endl;
             replicationClient->start();
         }
         
