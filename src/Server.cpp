@@ -7,6 +7,7 @@
 #include <chrono>
 #include <fstream>  // Include fstream for file operations
 #include <filesystem>
+#include "ReplicationClient.h"  
 
 using asio::ip::tcp;  
 using TimePoint = std::chrono::system_clock::time_point;
@@ -469,7 +470,8 @@ int main(int argc, char* argv[]) {
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
 
         if (!masterdetails.empty()) {
-            connectToMaster(io_context, masterdetails);
+            ReplicationClient replicationClient(io_context, masterdetails);
+            replicationClient.start();
         }
         
         // Run the I/O service - blocks until all work is done
