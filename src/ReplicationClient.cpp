@@ -18,7 +18,7 @@ void ReplicationClient::start() {
     master_socket_ = std::make_shared<tcp::socket>(io_context_);
     tcp::resolver resolver(io_context_);
     auto endpoints = resolver.resolve(masterHost, masterPort);
-
+    std::cout << "port stuff fired??." << masterHost << masterPort << std::endl;
     asio::async_connect(
         *master_socket_,
         endpoints,

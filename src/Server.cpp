@@ -471,6 +471,7 @@ int main(int argc, char* argv[]) {
 
         if (!masterdetails.empty()) {
             ReplicationClient replicationClient(io_context, masterdetails);
+            std::cout << "replicationClient fired??." << std::endl;
             replicationClient.start();
         }
         
