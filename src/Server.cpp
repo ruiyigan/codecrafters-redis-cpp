@@ -243,6 +243,9 @@ private:
                             messages.push_back("role:slave");
                         }
                     }
+                    else if (split_data[2] == "REPLCONF") {
+                        messages.push_back("OK");
+                    }
                     else {
                         messages.push_back("PONG");
                     }
