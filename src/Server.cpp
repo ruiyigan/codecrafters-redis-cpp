@@ -341,73 +341,6 @@ void readResponse(std::shared_ptr<tcp::socket> socket, const std::string& contex
     );
 }
 
-void sendPsync(std::shared_ptr<tcp::socket> master_socket) {
-    std::string psync = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
-    asio::async_write(
-        *master_socket,
-        asio::buffer(psync),
-        [master_socket](asio::error_code ec, std::size_t /*length*/) {
-            if (!ec) {
-                std::cout << "PSYNC command sent successfully to master!" << std::endl;
-                readResponse(master_socket, "after PSYNC", [](){
-                    // Handle any further steps or close the connection if needed.
-                });
-            } else {
-                std::cerr << "Error sending PSYNC to master: " << ec.message() << std::endl;
-            }
-        }
-    );
-}
-
-void sendReplConf(std::shared_ptr<tcp::socket> master_socket) {
-    // Send the first REPLCONF command
-    std::string first_replconf = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n";
-    asio::async_write(
-        *master_socket,
-        asio::buffer(first_replconf),
-        [master_socket](asio::error_code ec, std::size_t /*length*/) {
-            if (!ec) {
-                std::cout << "first_replconf command sent successfully to master!" << std::endl;
-                // Send the second REPLCONF command
-                std::string second_replconf = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
-                asio::async_write(
-                    *master_socket,
-                    asio::buffer(second_replconf),
-                    [master_socket](asio::error_code ec, std::size_t /*length*/) {
-                        if (!ec) {
-                            std::cout << "second_replconf command sent successfully to master!" << std::endl;
-                            readResponse(master_socket, "after REPLCONF", [master_socket](){
-                                sendPsync(master_socket);
-                            });
-                        } else {
-                            std::cerr << "Error sending second REPLCONF to master: " << ec.message() << std::endl;
-                        }
-                    }
-                );
-            } else {
-                std::cerr << "Error sending first REPLCONF to master: " << ec.message() << std::endl;
-            }
-        }
-    );
-}
-
-void sendPing(std::shared_ptr<tcp::socket> master_socket) {
-    std::string ping_cmd = "*1\r\n$4\r\nPING\r\n";
-    asio::async_write(
-        *master_socket,
-        asio::buffer(ping_cmd),
-        [master_socket](asio::error_code ec, std::size_t /*length*/) {
-            if (!ec) {
-                std::cout << "PING command sent successfully to master!" << std::endl;
-                readResponse(master_socket, "after PING", [master_socket](){
-                    sendReplConf(master_socket);
-                });
-            } else {
-                std::cerr << "Error sending PING to master: " << ec.message() << std::endl;
-            }
-        }
-    );
-}
 
 void connectToMaster(asio::io_context& io_context, const std::string& masterdetails) {
     auto [masterHost, masterPort] = parseHostPort(masterdetails);
@@ -422,8 +355,65 @@ void connectToMaster(asio::io_context& io_context, const std::string& masterdeta
         [master_socket](asio::error_code ec, tcp::endpoint /*ep*/) {
             if (!ec) {
                 std::cout << "Connected to master. Now sending PING..." << std::endl;
-                // Send the PING and then chain the other commands
-                sendPing(master_socket);
+                // FIRST STEP SEND PING
+                std::string ping_cmd = "*1\r\n$4\r\nPING\r\n";
+                asio::async_write(
+                    *master_socket,
+                    asio::buffer(ping_cmd),
+                    [master_socket](asio::error_code ec, std::size_t /*length*/) {
+                        if (!ec) {
+                            std::cout << "PING command sent successfully to master!" << std::endl;
+                            readResponse(master_socket, "after PING", [master_socket](){
+                                // SECOND STEP SEND REPL
+                                std::string first_replconf = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n";
+                                asio::async_write(
+                                    *master_socket,
+                                    asio::buffer(first_replconf),
+                                    [master_socket](asio::error_code ec, std::size_t /*length*/) {
+                                        if (!ec) {
+                                            std::cout << "first_replconf command sent successfully to master!" << std::endl;
+                                            // Send the second REPLCONF command
+                                            std::string second_replconf = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+                                            asio::async_write(
+                                                *master_socket,
+                                                asio::buffer(second_replconf),
+                                                [master_socket](asio::error_code ec, std::size_t /*length*/) {
+                                                    if (!ec) {
+                                                        std::cout << "second_replconf command sent successfully to master!" << std::endl;
+                                                        readResponse(master_socket, "after REPLCONF", [master_socket](){
+                                                            // SECOND STEP SEND PSYNC
+                                                            std::string psync = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+                                                            asio::async_write(
+                                                                *master_socket,
+                                                                asio::buffer(psync),
+                                                                [master_socket](asio::error_code ec, std::size_t /*length*/) {
+                                                                    if (!ec) {
+                                                                        std::cout << "PSYNC command sent successfully to master!" << std::endl;
+                                                                        readResponse(master_socket, "after PSYNC", [](){
+                                                                            // Handle any further steps or close the connection if needed.
+                                                                        });
+                                                                    } else {
+                                                                        std::cerr << "Error sending PSYNC to master: " << ec.message() << std::endl;
+                                                                    }
+                                                                }
+                                                            );
+                                                        });
+                                                    } else {
+                                                        std::cerr << "Error sending second REPLCONF to master: " << ec.message() << std::endl;
+                                                    }
+                                                }
+                                            );
+                                        } else {
+                                            std::cerr << "Error sending first REPLCONF to master: " << ec.message() << std::endl;
+                                        }
+                                    }
+                                );
+                            });
+                        } else {
+                            std::cerr << "Error sending PING to master: " << ec.message() << std::endl;
+                        }
+                    }
+                );
             } else {
                 std::cerr << "Error connecting to master: " << ec.message() << std::endl;
             }
