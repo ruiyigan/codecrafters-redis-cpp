@@ -24,7 +24,7 @@ public:
         std::string dbfilename,
         std::string masterdetails,
         std::string master_repl_id,
-        std::string master_repl_offset
+        unsigned master_repl_offset
     ) : socket_(std::move(socket)), storage_(storage), dir_(dir), dbfilename_(dbfilename), masterdetails_(masterdetails), master_repl_id_(master_repl_id), master_repl_offset_(master_repl_offset) {}
     // Start the session's async operations
     void start() {
@@ -250,10 +250,7 @@ private:
                         messages.push_back("OK");
                     }
                     else if (split_data[2] == "PSYNC") {
-                        std::string message = "+FULLRESYNC ";
-                        message += master_repl_id_;
-                        message += " ";
-                        message += master_repl_offset_;
+                        std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
                         messages.push_back(message);
                     }
                     else {
@@ -307,7 +304,7 @@ private:
     std::string dbfilename_;
     std::string masterdetails_;
     std::string master_repl_id_;
-    std::string master_repl_offset_;
+    unsigned master_repl_offset_;
 };
 
 void accept_connections(
@@ -317,7 +314,7 @@ void accept_connections(
         std::string dbfilename,
         std::string masterdetails,
         std::string master_repl_id,
-        std::string master_repl_offset
+        unsigned master_repl_offset
     ) {
     acceptor.async_accept(
         [&acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset](asio::error_code ec, tcp::socket socket) {
@@ -440,10 +437,10 @@ int main(int argc, char* argv[]) {
         asio::io_context io_context;
         std::string dir;
         std::string dbfilename;
-        int portnumber = 6379;
+        unsigned portnumber = 6379;
         std::string masterdetails = "";
         std::string master_repl_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
-        std::string master_repl_offset = "0";
+        unsigned master_repl_offset = 0;
 
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
