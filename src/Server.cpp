@@ -252,6 +252,7 @@ private:
                     else if (split_data[2] == "PSYNC") {
                         std::string message = "+FULLRESYNC ";
                         message += master_repl_id_;
+                        message += " ";
                         message += master_repl_offset_;
                         messages.push_back(message);
                     }
