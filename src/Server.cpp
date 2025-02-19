@@ -22,8 +22,10 @@ public:
         std::shared_ptr<StorageType> storage,
         std::string dir,
         std::string dbfilename,
-        std::string masterdetails
-    ) : socket_(std::move(socket)), storage_(storage), dir_(dir), dbfilename_(dbfilename), masterdetails_(masterdetails) {}
+        std::string masterdetails,
+        std::string master_repl_id,
+        std::string master_repl_offset
+    ) : socket_(std::move(socket)), storage_(storage), dir_(dir), dbfilename_(dbfilename), masterdetails_(masterdetails), master_repl_id_(master_repl_id), master_repl_offset_(master_repl_offset) {}
     // Start the session's async operations
     void start() {
         read();  // Initiate first read
@@ -235,7 +237,8 @@ private:
                             // master
                             std::string role = "role:master";
                             std::string master_repl_offset = "nmaster_repl_offset:0";
-                            std::string nmaster_replid = "nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+                            std::string nmaster_replid = "nmaster_replid:";
+                            nmaster_replid += master_repl_id_;
                             std::string message = role + "\r\n" + master_repl_offset + "\r\n" + nmaster_replid;
                             messages.push_back(message);
                         } else {
@@ -245,6 +248,12 @@ private:
                     }
                     else if (split_data[2] == "REPLCONF") {
                         messages.push_back("OK");
+                    }
+                    else if (split_data[2] == "PSYNC") {
+                        std::string message = "+FULLRESYNC ";
+                        message += master_repl_id_;
+                        message += master_repl_offset_;
+                        messages.push_back(message);
                     }
                     else {
                         messages.push_back("PONG");
@@ -296,6 +305,8 @@ private:
     std::string dir_;
     std::string dbfilename_;
     std::string masterdetails_;
+    std::string master_repl_id_;
+    std::string master_repl_offset_;
 };
 
 void accept_connections(
@@ -303,15 +314,17 @@ void accept_connections(
         std::shared_ptr<StorageType> storage,
         std::string dir,
         std::string dbfilename,
-        std::string masterdetails
+        std::string masterdetails,
+        std::string master_repl_id,
+        std::string master_repl_offset
     ) {
     acceptor.async_accept(
-        [&acceptor, storage, dir, dbfilename, masterdetails](asio::error_code ec, tcp::socket socket) {
+        [&acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset](asio::error_code ec, tcp::socket socket) {
             if (!ec) {
-                std::make_shared<Session>(std::move(socket), storage, dir, dbfilename, masterdetails)->start();
+                std::make_shared<Session>(std::move(socket), storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset)->start();
                 std::cout << "Client connected" << std::endl;
             }
-            accept_connections(acceptor, storage, dir, dbfilename, masterdetails); // recursion
+            accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset); // recursion
         });
 }
 
@@ -428,6 +441,8 @@ int main(int argc, char* argv[]) {
         std::string dbfilename;
         int portnumber = 6379;
         std::string masterdetails = "";
+        std::string master_repl_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+        std::string master_repl_offset = "0";
 
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -455,7 +470,7 @@ int main(int argc, char* argv[]) {
         auto storage = std::make_shared<StorageType>();  // Use tuple storage
 
         // Start accepting connections
-        accept_connections(acceptor, storage, dir, dbfilename, masterdetails);
+        accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset);
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
 
         if (!masterdetails.empty()) {
