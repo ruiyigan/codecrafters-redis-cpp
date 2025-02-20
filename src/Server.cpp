@@ -267,8 +267,8 @@ private:
                         messages.push_back(message);
                         std::vector<std::string> second_messages;
                         std::string hex_empty_rdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
-                        messages.push_back(hex_empty_rdb);
-                        write(messages, include_size);
+                        second_messages.push_back(hex_empty_rdb);
+                        write(second_messages, include_size);
                     }
                     else {
                         messages.push_back("PONG");
