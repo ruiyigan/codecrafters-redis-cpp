@@ -265,6 +265,7 @@ private:
                         // Third Part of handshake with replicas
                         std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
                         messages.push_back(message);
+                        write(messages, include_size);
                         std::vector<std::string> second_messages;
                         std::string hex_empty_rdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
                         second_messages.push_back(hex_empty_rdb);
