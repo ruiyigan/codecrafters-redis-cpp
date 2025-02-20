@@ -267,9 +267,8 @@ private:
                         messages.push_back(message);
                         write(messages, include_size);
                         std::vector<std::string> second_messages;
-                        std::string hex_empty_rdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
-                        second_messages.push_back(hex_empty_rdb);
-                        write(second_messages, include_size);
+                        std::string hex_empty_rdb = "$88\r\n\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
+                        manual_write(hex_empty_rdb);
                     }
                     else {
                         messages.push_back("PONG");
@@ -284,6 +283,18 @@ private:
             });
     }
 
+    // Write without any parsing
+    void manual_write(std::string message) {
+        auto self(shared_from_this());
+        asio::async_write(socket_, asio::buffer(message, message.size()),
+            [this, self](asio::error_code ec, std::size_t /*length*/) {
+                if (!ec) {
+                    read();  // Continue reading after successful write
+                } else {
+                    std::cerr << "Write error: " << ec.message() << std::endl;
+                }
+            });
+    }
     void write(std::vector<std::string> messages, bool size = false) {
         // Similar to read function, creates a shared pointer
         auto self(shared_from_this());
@@ -301,8 +312,6 @@ private:
             }
         }
         std::string msg = msg_stream.str();
-        
-
         std::cout << "MESSAGE SENT..: " << msg << std::endl;
         asio::async_write(socket_, asio::buffer(msg, msg.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
