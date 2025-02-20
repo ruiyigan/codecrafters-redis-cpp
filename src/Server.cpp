@@ -183,6 +183,7 @@ private:
                     if (split_data[2] == "ECHO") {
                         // Echos back message
                         messages.push_back(split_data.back());
+                        write(messages, include_size);  
                     }
                     else if (split_data[2] == "SET") {
                         // Saves data from user
@@ -198,6 +199,7 @@ private:
                             (*storage_)[key] = std::make_tuple(value, TimePoint::max());
                         }
                         messages.push_back("OK");
+                        write(messages, include_size);  
                     } 
                     else if (split_data[2] == "GET")
                     {
@@ -217,7 +219,8 @@ private:
                             } else {
                                 messages.push_back(stored_value);
                             }
-                        }       
+                        }   
+                        write(messages, include_size);      
                     }
                     else if (split_data[2] == "CONFIG") 
                     {
@@ -228,6 +231,7 @@ private:
                             messages.push_back(param_name);
                             messages.push_back(param_value);
                         }
+                        write(messages, include_size);  
                     }
                     else if (split_data[2] == "KEYS") {
                         // Get keys of redis
@@ -235,6 +239,7 @@ private:
                             messages.push_back(entry.first);
                         }
                         include_size = true;
+                        write(messages, include_size);  
                     }
                     else if (split_data[2] == "INFO") {
                         if (masterdetails_ == "") {
@@ -249,21 +254,26 @@ private:
                             // Not Master
                             messages.push_back("role:slave");
                         }
+                        write(messages, include_size);  
                     }
                     else if (split_data[2] == "REPLCONF") {
                         // Second Part of handshake with replicas
                         messages.push_back("OK");
+                        write(messages, include_size);  
                     }
                     else if (split_data[2] == "PSYNC") {
                         // Third Part of handshake with replicas
                         std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
                         messages.push_back(message);
+                        std::vector<std::string> second_messages;
+                        std::string hex_empty_rdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+                        messages.push_back(hex_empty_rdb);
+                        write(messages, include_size);
                     }
                     else {
                         messages.push_back("PONG");
+                        write(messages, include_size);  
                     }
-
-                    write(messages, include_size);  
                 } else {
                     // Handle errors (including client disconnects)
                     if (ec != asio::error::eof) {
