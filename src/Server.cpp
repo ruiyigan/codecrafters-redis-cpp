@@ -16,8 +16,10 @@ using StorageType = std::unordered_map<std::string, std::tuple<std::string, Time
 // Session class handles each client connection. Inherits from enable_shared_from_this to allow safe shared_ptr management in async callbacks
 // When shared_from_this() called, a new shared_ptr created. Pointer exists as long as at least one async callback holding it
 // When the last shared_ptr destroyed, the Session object will be deleted.
-class Session;  // Forward declaration
-std::shared_ptr<Session> g_replica_session = nullptr;
+
+// class Session;  // Forward declaration
+// std::shared_ptr<Session> g_replica_session = nullptr;
+
 class Session : public std::enable_shared_from_this<Session> {
 public:
     Session(
@@ -36,7 +38,7 @@ public:
         is_replica_ = replica;
     }
 
-    // static std::shared_ptr<Session> g_replica_session;
+    static std::shared_ptr<Session> g_replica_session;
 
 private:
     // Helper function to split string based on delimiter provided
