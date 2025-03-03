@@ -17,8 +17,8 @@ using StorageType = std::unordered_map<std::string, std::tuple<std::string, Time
 // When shared_from_this() called, a new shared_ptr created. Pointer exists as long as at least one async callback holding it
 // When the last shared_ptr destroyed, the Session object will be deleted.
 
-// class Session;  // Forward declaration
-// std::shared_ptr<Session> g_replica_session = nullptr;
+class Session;  // Forward declaration
+std::shared_ptr<Session> g_replica_session = nullptr;
 
 class Session : public std::enable_shared_from_this<Session> {
 public:
@@ -38,7 +38,7 @@ public:
         is_replica_ = replica;
     }
 
-    static std::shared_ptr<Session> g_replica_session;
+    // static std::shared_ptr<Session> g_replica_session;
 
 private:
     // Helper function to split string based on delimiter provided
