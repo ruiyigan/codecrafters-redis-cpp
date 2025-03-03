@@ -221,7 +221,9 @@ private:
                         
                         if (!is_replica_) { // propagate if not replica and respond
                             std::cout << "PROPGATING Following Data: " << data << std::endl;
-                            g_replica_session->propagate(data);
+                            if (g_replica_session) {
+                                g_replica_session->propagate(data);
+                            }
                             write(messages, include_size);  
                         }
                     } 
