@@ -214,6 +214,7 @@ private:
                         messages.push_back("OK");
                         
                         if (!is_replica_) { // propagate if not replica and respond
+                            std::cout << "PROPGATING STUFF" << data << std::endl;
                             g_replica_session->propagate(data);
                             write(messages, include_size);  
                         }
