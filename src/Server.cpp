@@ -173,6 +173,10 @@ private:
 
                 if (static_cast<unsigned char>(ch) == 0x00) {
                     std::string key = readString(file);
+                    if (key.empty()) {
+                        // Skip empty key (likely end-of-database)
+                        break;
+                    }
                     std::string value = readString(file);   
                     std::cout << "KEY FROM RDB..: " << key << std::endl;
                     std::cout << "VALUE FROM RDB..: " << value << std::endl;
