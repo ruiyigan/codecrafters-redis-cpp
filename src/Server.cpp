@@ -57,23 +57,64 @@ private:
         return tokens;
     }
 
-    std::vector<std::string> splitRedisCommands(const std::string &input) {
+    // Persistent buffer to accumulate incoming data
+    std::string data_buffer_;
+
+    // A proper RESP parser that attempts to extract one complete command
+    // It returns a pair: (vector of tokens, number of bytes consumed)
+    std::pair<std::vector<std::string>, size_t> parseRespCommand(const std::string &data) {
         std::vector<std::string> tokens;
-        std::stringstream stream(input);
-        std::string token;
-    
-        // Split based on '*' character
-        while (std::getline(stream, token, '*')) {
-            if (!token.empty()) {
-                if (token.back() == '\r')
-                    token.pop_back();
-                // Check if token begins with a digit (this is a naive check to ensure it's a command)
-                if (!token.empty() && std::isdigit(token[0])) {
-                    tokens.push_back(token);
-                }
-            }
+        size_t pos = 0;
+        size_t len = data.size();
+
+        // Command must start with '*'
+        if (pos >= len || data[pos] != '*') {
+            return {tokens, 0};
         }
-        return tokens;
+
+        // Find the end of the array header line
+        size_t endLine = data.find("\r\n", pos);
+        if (endLine == std::string::npos)
+            return {tokens, 0};
+
+        int numElements = 0;
+        try {
+            numElements = std::stoi(data.substr(pos + 1, endLine - pos - 1));
+        } catch (...) {
+            return {tokens, 0};
+        }
+        pos = endLine + 2; // move past "\r\n"
+
+        // Loop to parse each bulk string
+        for (int i = 0; i < numElements; i++) {
+            if (pos >= len || data[pos] != '$')
+                return {tokens, 0};
+
+            size_t bulkEnd = data.find("\r\n", pos);
+            if (bulkEnd == std::string::npos)
+                return {tokens, 0};
+
+            int bulkLen = 0;
+            try {
+                bulkLen = std::stoi(data.substr(pos + 1, bulkEnd - pos - 1));
+            } catch (...) {
+                return {tokens, 0};
+            }
+            pos = bulkEnd + 2; // move past "\r\n"
+
+            if (pos + bulkLen > len)
+                return {tokens, 0};  // Incomplete data
+
+            std::string token = data.substr(pos, bulkLen);
+            tokens.push_back(token);
+            pos += bulkLen;
+
+            // Check for trailing "\r\n"
+            if (pos + 2 > len || data.substr(pos, 2) != "\r\n")
+                return {tokens, 0};
+            pos += 2;
+        }
+        return {tokens, pos};
     }
     
     void propagate(const std::string &command) {
@@ -207,152 +248,303 @@ private:
         }
     }
 
-    void read() {
-        // Capture a shared_ptr to keep object alive during async operation, all shared pointer shares the same reference count
-        auto self(shared_from_this());
+    void processCommand(const std::vector<std::string>& tokens) {
+        // (Optionally, load RDB once at startup instead of on every command.)
+        readFile(dir_, dbfilename_, storage_);
         
+        std::vector<std::string> messages;
+        bool include_size = false;
+        
+        if (tokens.empty())
+            return;
+        
+        // In a proper RESP command, tokens[0] is the command.
+        std::string command = tokens[0];
+        
+        if (command == "ECHO") {
+            // ECHO <message>
+            if (tokens.size() > 1)
+                messages.push_back(tokens[1]);
+            write(messages, include_size);
+        } 
+        else if (command == "SET") {
+            // SET <key> <value> [px <milliseconds>]
+            if (tokens.size() < 3)
+                return;
+            std::string key = tokens[1];
+            std::string value = tokens[2];
+            if (tokens.size() >= 5 && tokens[3] == "px") {
+                int expiry_ms = std::stoi(tokens[4]);
+                auto expiry_time = std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_ms);
+                (*storage_)[key] = std::make_tuple(value, expiry_time);
+            } else {
+                (*storage_)[key] = std::make_tuple(value, TimePoint::max());
+            }
+            
+            // If not a replica, propagate the command and send an OK reply.
+            if (!is_replica_) {
+                messages.push_back("OK");
+                std::cout << "Propagating following data: " << data_buffer_ << std::endl;
+                for (auto& replica_session : g_replica_sessions) {
+                    if (replica_session) {
+                        // Optionally, you can propagate just this command string.
+                        replica_session->propagate(data_buffer_);
+                    }
+                }
+                write(messages, include_size);
+            } else {
+                read();  // For replica, simply continue reading.
+            }
+        } 
+        else if (command == "GET") {
+            // GET <key>
+            if (tokens.size() < 2)
+                return;
+            std::string key = tokens[1];
+            auto it = storage_->find(key);
+            if (it != storage_->end()) {
+                std::string stored_value = std::get<0>(it->second);
+                TimePoint expiry_time = std::get<1>(it->second);
+                if (std::chrono::system_clock::now() <= expiry_time)
+                    messages.push_back(stored_value);
+                else
+                    storage_->erase(it);
+            }
+            write(messages, include_size);
+        } 
+        else if (command == "CONFIG") {
+            // CONFIG GET <param>
+            if (tokens.size() >= 3 && tokens[1] == "GET") {
+                std::string param_name = tokens[2];
+                std::string param_value = dir_;
+                messages.push_back(param_name);
+                messages.push_back(param_value);
+            }
+            write(messages, include_size);
+        } 
+        else if (command == "KEYS") {
+            // Return all keys in storage.
+            for (const auto &entry : *storage_) {
+                messages.push_back(entry.first);
+            }
+            include_size = true;
+            write(messages, include_size);
+        } 
+        else if (command == "INFO") {
+            // INFO returns master/slave role and other replication info.
+            if (masterdetails_.empty()) { // Master
+                std::string role = "role:master";
+                std::string master_repl_offset_str = "nmaster_repl_offset:0";
+                std::string nmaster_replid = "nmaster_replid:" + master_repl_id_;
+                std::string info_message = role + "\r\n" + master_repl_offset_str + "\r\n" + nmaster_replid;
+                messages.push_back(info_message);
+            } else { // Replica
+                messages.push_back("role:slave");
+            }
+            write(messages, include_size);
+        } 
+        else if (command == "REPLCONF") {
+            // REPLCONF handshake command.
+            messages.push_back("OK");
+            write(messages, include_size);
+        } 
+        else if (command == "PSYNC") {
+            // PSYNC handshake command.
+            std::string psync_message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
+            messages.push_back(psync_message);
+            write(messages, include_size);
+            
+            // Add this session to replica sessions.
+            g_replica_sessions.push_back(shared_from_this());
+            
+            // Send an empty RDB to the replica.
+            std::string empty_rdb = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
+            std::string return_msg = "$" + std::to_string(empty_rdb.length()) + "\r\n" + empty_rdb;
+            manual_write(return_msg);
+        } 
+        else {
+            // Default response.
+            messages.push_back("PONG");
+            write(messages, include_size);
+        }
+    }
+    
+    void read() {
+        auto self(shared_from_this());
         socket_.async_read_some(asio::buffer(buffer_),
-            // Lambda captures 'this' and self (shared_ptr) for proper lifetime
             [this, self](asio::error_code ec, std::size_t length) {
                 if (!ec) {
-                    // Reading RDB File
-                    // TODO: Bring this out of read function
-                    readFile(dir_, dbfilename_, storage_);
+                    // Append the newly received data to the persistent buffer
+                    data_buffer_.append(buffer_.data(), length);
+                    std::cout << "Received data:\n" << data_buffer_ << std::endl;
 
-
-                    std::string data = std::string(buffer_.data(), length);
-                    std::cout << "Received: \n" << data << std::endl;
-
-
-                    // Split multiple commands into individual command
-                    std::vector<std::string> split_commands = splitRedisCommands(data);
-
-                    for (auto split_command : split_commands) {
-                        std::cout << "COMMAND RECEIVED: \n" << split_command << std::endl;
-                        std::vector<std::string> split_data = splitString(split_command, '\n');
-                        std::vector<std::string> messages;
-                        bool include_size = false;
-                        if (split_data[2] == "ECHO") {
-                            // Echos back message
-                            messages.push_back(split_data.back());
-                            write(messages, include_size);  
+                    size_t offset = 0;
+                    while (offset < data_buffer_.size()) {
+                        auto [tokens, consumed] = parseRespCommand(data_buffer_.substr(offset));
+                        if (consumed == 0) break;  // Incomplete command; wait for more data
+                        std::cout << "COMMAND RECEIVED:" << std::endl;
+                        for (const auto& t : tokens) {
+                            std::cout << t << std::endl;
                         }
-                        else if (split_data[2] == "SET") {
-                            // Saves data from user
-                            std::string key = split_data[4];
-                            std::string value = split_data[6];
-                            std::time_t expiry_time = 0;
-                            if (split_data.size() >= 11 && split_data[8] == "px") {
-                                int expiry_ms = std::stoi(split_data[10]); // milliseconds
-                                auto expiry_time = std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_ms);
-                                (*storage_)[key] = std::make_tuple(value, expiry_time);
-                            } else {
-                                // Use a distant future time if no expiry is specified
-                                (*storage_)[key] = std::make_tuple(value, TimePoint::max());
-                            }
-                            
-                            if (!is_replica_) { // propagate if not replica and respond
-                                messages.push_back("OK");
-                                std::cout << "PROPGATING Following Data: " << data << std::endl;
-                                for (auto& replica_session : g_replica_sessions) {
-                                    if (replica_session) {
-                                        replica_session->propagate(data);
-                                    }
-                                }
-                                write(messages, include_size);  
-                            } else { // continue to read for replicas
-                                read();
-                            }
-                        } 
-                        else if (split_data[2] == "GET")
-                        {
-                            // Get data from storage
-                            std::string key = split_data[4];
-    
-                            auto it = storage_->find(key);
-                            if (it == storage_->end()) {
-                            } else {
-                                std::string stored_value = std::get<0>(it -> second);
-                                TimePoint expiry_time = std::get<1>(it -> second);
-                                
-                                std::cout << "TIME NOW at expiry FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
-                                std::cout << "TIME NOW..: " << std::chrono::system_clock::now().time_since_epoch().count() << std::endl;
-                                if (std::chrono::system_clock::now() > expiry_time) {
-                                    storage_->erase(it);
-                                } else {
-                                    messages.push_back(stored_value);
-                                }
-                            }   
-                            write(messages, include_size);      
-                        }
-                        else if (split_data[2] == "CONFIG") 
-                        {
-                            // Get config details
-                            if (split_data[4] == "GET") {
-                                std::string param_name = split_data[6];
-                                std::string param_value = dir_;
-                                messages.push_back(param_name);
-                                messages.push_back(param_value);
-                            }
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "KEYS") {
-                            // Get keys of redis
-                            for (const auto &entry : *storage_) {
-                                messages.push_back(entry.first);
-                            }
-                            include_size = true;
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "INFO") {
-                            if (masterdetails_ == "") {
-                                // Master
-                                std::string role = "role:master";
-                                std::string master_repl_offset = "nmaster_repl_offset:0";
-                                std::string nmaster_replid = "nmaster_replid:";
-                                nmaster_replid += master_repl_id_;
-                                std::string message = role + "\r\n" + master_repl_offset + "\r\n" + nmaster_replid;
-                                messages.push_back(message);
-                            } else {
-                                // Not Master
-                                messages.push_back("role:slave");
-                            }
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "REPLCONF") {
-                            // Second Part of handshake with replicas
-                            messages.push_back("OK");
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "PSYNC") {
-                            // Third Part of handshake with replicas
-                            std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
-                            messages.push_back(message);
-                            write(messages, include_size);
-    
-                            g_replica_sessions.push_back(shared_from_this());
-    
-                            std::string empty_rdb = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
-                            std::string return_msg = "$" + std::to_string(empty_rdb.length()) + "\r\n" + empty_rdb;
-                            manual_write(return_msg);
-                        }
-                        else {
-                            messages.push_back("PONG");
-                            write(messages, include_size);  
-                        }
-                        
+                        processCommand(tokens);
+                        offset += consumed;
                     }
-
-                    
-                    
+                    // Remove processed data from the buffer
+                    data_buffer_ = data_buffer_.substr(offset);
+                    read();  // Continue reading
                 } else {
-                    // Handle errors (including client disconnects)
-                    if (ec != asio::error::eof) {
+                    if (ec != asio::error::eof)
                         std::cerr << "Read error: " << ec.message() << std::endl;
-                    }
                 }
             });
     }
+
+    // void read() {
+    //     // Capture a shared_ptr to keep object alive during async operation, all shared pointer shares the same reference count
+    //     auto self(shared_from_this());
+        
+    //     socket_.async_read_some(asio::buffer(buffer_),
+    //         // Lambda captures 'this' and self (shared_ptr) for proper lifetime
+    //         [this, self](asio::error_code ec, std::size_t length) {
+    //             if (!ec) {
+    //                 // Reading RDB File
+    //                 // TODO: Bring this out of read function
+    //                 readFile(dir_, dbfilename_, storage_);
+
+
+    //                 std::string data = std::string(buffer_.data(), length);
+    //                 std::cout << "Received: \n" << data << std::endl;
+
+
+    //                 // Split multiple commands into individual command
+    //                 std::vector<std::string> split_commands = splitRedisCommands(data);
+
+    //                 for (auto split_command : split_commands) {
+    //                     std::cout << "COMMAND RECEIVED: \n" << split_command << std::endl;
+    //                     std::vector<std::string> split_data = splitString(split_command, '\n');
+    //                     std::vector<std::string> messages;
+    //                     bool include_size = false;
+    //                     if (split_data[2] == "ECHO") {
+    //                         // Echos back message
+    //                         messages.push_back(split_data.back());
+    //                         write(messages, include_size);  
+    //                     }
+    //                     else if (split_data[2] == "SET") {
+    //                         // Saves data from user
+    //                         std::string key = split_data[4];
+    //                         std::string value = split_data[6];
+    //                         std::time_t expiry_time = 0;
+    //                         if (split_data.size() >= 11 && split_data[8] == "px") {
+    //                             int expiry_ms = std::stoi(split_data[10]); // milliseconds
+    //                             auto expiry_time = std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_ms);
+    //                             (*storage_)[key] = std::make_tuple(value, expiry_time);
+    //                         } else {
+    //                             // Use a distant future time if no expiry is specified
+    //                             (*storage_)[key] = std::make_tuple(value, TimePoint::max());
+    //                         }
+                            
+    //                         if (!is_replica_) { // propagate if not replica and respond
+    //                             messages.push_back("OK");
+    //                             std::cout << "PROPGATING Following Data: " << data << std::endl;
+    //                             for (auto& replica_session : g_replica_sessions) {
+    //                                 if (replica_session) {
+    //                                     replica_session->propagate(data);
+    //                                 }
+    //                             }
+    //                             write(messages, include_size);  
+    //                         } else { // continue to read for replicas
+    //                             read();
+    //                         }
+    //                     } 
+    //                     else if (split_data[2] == "GET")
+    //                     {
+    //                         // Get data from storage
+    //                         std::string key = split_data[4];
+    
+    //                         auto it = storage_->find(key);
+    //                         if (it == storage_->end()) {
+    //                         } else {
+    //                             std::string stored_value = std::get<0>(it -> second);
+    //                             TimePoint expiry_time = std::get<1>(it -> second);
+                                
+    //                             std::cout << "TIME NOW at expiry FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
+    //                             std::cout << "TIME NOW..: " << std::chrono::system_clock::now().time_since_epoch().count() << std::endl;
+    //                             if (std::chrono::system_clock::now() > expiry_time) {
+    //                                 storage_->erase(it);
+    //                             } else {
+    //                                 messages.push_back(stored_value);
+    //                             }
+    //                         }   
+    //                         write(messages, include_size);      
+    //                     }
+    //                     else if (split_data[2] == "CONFIG") 
+    //                     {
+    //                         // Get config details
+    //                         if (split_data[4] == "GET") {
+    //                             std::string param_name = split_data[6];
+    //                             std::string param_value = dir_;
+    //                             messages.push_back(param_name);
+    //                             messages.push_back(param_value);
+    //                         }
+    //                         write(messages, include_size);  
+    //                     }
+    //                     else if (split_data[2] == "KEYS") {
+    //                         // Get keys of redis
+    //                         for (const auto &entry : *storage_) {
+    //                             messages.push_back(entry.first);
+    //                         }
+    //                         include_size = true;
+    //                         write(messages, include_size);  
+    //                     }
+    //                     else if (split_data[2] == "INFO") {
+    //                         if (masterdetails_ == "") {
+    //                             // Master
+    //                             std::string role = "role:master";
+    //                             std::string master_repl_offset = "nmaster_repl_offset:0";
+    //                             std::string nmaster_replid = "nmaster_replid:";
+    //                             nmaster_replid += master_repl_id_;
+    //                             std::string message = role + "\r\n" + master_repl_offset + "\r\n" + nmaster_replid;
+    //                             messages.push_back(message);
+    //                         } else {
+    //                             // Not Master
+    //                             messages.push_back("role:slave");
+    //                         }
+    //                         write(messages, include_size);  
+    //                     }
+    //                     else if (split_data[2] == "REPLCONF") {
+    //                         // Second Part of handshake with replicas
+    //                         messages.push_back("OK");
+    //                         write(messages, include_size);  
+    //                     }
+    //                     else if (split_data[2] == "PSYNC") {
+    //                         // Third Part of handshake with replicas
+    //                         std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
+    //                         messages.push_back(message);
+    //                         write(messages, include_size);
+    
+    //                         g_replica_sessions.push_back(shared_from_this());
+    
+    //                         std::string empty_rdb = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
+    //                         std::string return_msg = "$" + std::to_string(empty_rdb.length()) + "\r\n" + empty_rdb;
+    //                         manual_write(return_msg);
+    //                     }
+    //                     else {
+    //                         messages.push_back("PONG");
+    //                         write(messages, include_size);  
+    //                     }
+                        
+    //                 }
+
+                    
+                    
+    //             } else {
+    //                 // Handle errors (including client disconnects)
+    //                 if (ec != asio::error::eof) {
+    //                     std::cerr << "Read error: " << ec.message() << std::endl;
+    //                 }
+    //             }
+    //         });
+    // }
 
     // Write without any parsing
     void manual_write(std::string message) {
