@@ -220,7 +220,7 @@ private:
 
 
                     // Split multiple commands into individual command
-                    // std::vector<std::string> split_commands = splitRedisCommands(data);
+                    std::vector<std::string> split_commands = splitRedisCommands(data);
 
                     // for (auto splitcommand : split_commands) {
                         
