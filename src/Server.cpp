@@ -57,30 +57,19 @@ private:
         return tokens;
     }
 
-    std::vector<std::string> parseRESP(const std::string& data) {
+    std::vector<std::string> splitRedisCommands(const std::string &input) {
         std::vector<std::string> tokens;
-        size_t pos = 0;
-        size_t len = data.size();
-
-        if (pos < len && data[pos] == '*') {
-            // Get the number of elements
-            size_t end_line = data.find("\r\n", pos);
-            if (end_line == std::string::npos)
-                return tokens;
-            int num_elements = std::stoi(data.substr(pos + 1, end_line - pos - 1));
-            pos = end_line + 2;
-            for (int i = 0; i < num_elements; i++) {
-                if (pos < len && data[pos] == '$') {
-                    size_t bulk_end = data.find("\r\n", pos);
-                    if (bulk_end == std::string::npos)
-                        break;
-                    int bulk_length = std::stoi(data.substr(pos + 1, bulk_end - pos - 1));
-                    pos = bulk_end + 2;
-                    if (pos + bulk_length > len)
-                        break;
-                    std::string token = data.substr(pos, bulk_length);
+        std::stringstream stream(input);
+        std::string token;
+    
+        // Split based on '*' character
+        while (std::getline(stream, token, '*')) {
+            if (!token.empty()) {
+                if (token.back() == '\r')
+                    token.pop_back();
+                // Check if token begins with a digit (this is a naive check to ensure it's a command)
+                if (!token.empty() && std::isdigit(token[0])) {
                     tokens.push_back(token);
-                    pos += bulk_length + 2;  // Skip the trailing "\r\n"
                 }
             }
         }
@@ -228,10 +217,11 @@ private:
                 if (!ec) {
                     std::string data = std::string(buffer_.data(), length);
                     std::cout << "Received: \n" << data << std::endl;
-                    std::vector<std::string> split_commands = splitString(data, '*');
-                    unsigned length_commands = split_commands.size();
 
+                    std::vector<std::string> split_commands = splitRedisCommands(data);
+                    unsigned length_commands = split_commands.size();
                     std::cout << "NUMBER OF COMMANDS \n" << std::to_string(length_commands) << std::endl;
+
 
                     std::vector<std::string> split_data = splitString(data, '\n');
 
