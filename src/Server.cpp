@@ -18,7 +18,7 @@ using StorageType = std::unordered_map<std::string, std::tuple<std::string, Time
 // When the last shared_ptr destroyed, the Session object will be deleted.
 
 class Session;  // Forward declaration
-std::vector<std::shared_ptr<Session>> g_replica_sessions;
+
 
 class Session : public std::enable_shared_from_this<Session> {
 public:
@@ -38,7 +38,7 @@ public:
         is_replica_ = replica;
     }
 
-    // static std::shared_ptr<Session> g_replica_session;
+    static std::vector<std::shared_ptr<Session>> g_replica_sessions;
 
 private:
     // Helper function to split string based on delimiter provided
