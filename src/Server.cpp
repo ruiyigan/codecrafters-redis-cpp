@@ -221,121 +221,123 @@ private:
                     // Split multiple commands into individual command
                     std::vector<std::string> split_commands = splitRedisCommands(data);
 
-                    for (auto splitcommand : split_commands) {
-                        std::vector<std::string> split_data = splitString(splitcommand, '\n');
-    
-                        std::vector<std::string> messages;
-                        readFile(dir_, dbfilename_, storage_);
-                        bool include_size = false;
-                        if (split_data[2] == "ECHO") {
-                            // Echos back message
-                            messages.push_back(split_data.back());
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "SET") {
-                            // Saves data from user
-                            std::string key = split_data[4];
-                            std::string value = split_data[6];
-                            std::time_t expiry_time = 0;
-                            if (split_data.size() >= 11 && split_data[8] == "px") {
-                                int expiry_ms = std::stoi(split_data[10]); // milliseconds
-                                auto expiry_time = std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_ms);
-                                (*storage_)[key] = std::make_tuple(value, expiry_time);
-                            } else {
-                                // Use a distant future time if no expiry is specified
-                                (*storage_)[key] = std::make_tuple(value, TimePoint::max());
-                            }
-                            
-                            if (!is_replica_) { // propagate if not replica and respond
-                                messages.push_back("OK");
-                                std::cout << "PROPGATING Following Data: " << data << std::endl;
-                                for (auto& replica_session : g_replica_sessions) {
-                                    if (replica_session) {
-                                        replica_session->propagate(data);
-                                    }
-                                }
-                                write(messages, include_size);  
-                            } else { // continue to read for replicas
-                                read();
-                            }
-                        } 
-                        else if (split_data[2] == "GET")
-                        {
-                            // Get data from storage
-                            std::string key = split_data[4];
-    
-                            auto it = storage_->find(key);
-                            if (it == storage_->end()) {
-                            } else {
-                                std::string stored_value = std::get<0>(it -> second);
-                                TimePoint expiry_time = std::get<1>(it -> second);
-                                
-                                std::cout << "TIME NOW at expiry FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
-                                std::cout << "TIME NOW..: " << std::chrono::system_clock::now().time_since_epoch().count() << std::endl;
-                                if (std::chrono::system_clock::now() > expiry_time) {
-                                    storage_->erase(it);
-                                } else {
-                                    messages.push_back(stored_value);
-                                }
-                            }   
-                            write(messages, include_size);      
-                        }
-                        else if (split_data[2] == "CONFIG") 
-                        {
-                            // Get config details
-                            if (split_data[4] == "GET") {
-                                std::string param_name = split_data[6];
-                                std::string param_value = dir_;
-                                messages.push_back(param_name);
-                                messages.push_back(param_value);
-                            }
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "KEYS") {
-                            // Get keys of redis
-                            for (const auto &entry : *storage_) {
-                                messages.push_back(entry.first);
-                            }
-                            include_size = true;
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "INFO") {
-                            if (masterdetails_ == "") {
-                                // Master
-                                std::string role = "role:master";
-                                std::string master_repl_offset = "nmaster_repl_offset:0";
-                                std::string nmaster_replid = "nmaster_replid:";
-                                nmaster_replid += master_repl_id_;
-                                std::string message = role + "\r\n" + master_repl_offset + "\r\n" + nmaster_replid;
-                                messages.push_back(message);
-                            } else {
-                                // Not Master
-                                messages.push_back("role:slave");
-                            }
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "REPLCONF") {
-                            // Second Part of handshake with replicas
-                            messages.push_back("OK");
-                            write(messages, include_size);  
-                        }
-                        else if (split_data[2] == "PSYNC") {
-                            // Third Part of handshake with replicas
-                            std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
-                            messages.push_back(message);
-                            write(messages, include_size);
-    
-                            g_replica_sessions.push_back(shared_from_this());
-    
-                            std::string empty_rdb = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
-                            std::string return_msg = "$" + std::to_string(empty_rdb.length()) + "\r\n" + empty_rdb;
-                            manual_write(return_msg);
-                        }
-                        else {
-                            messages.push_back("PONG");
-                            write(messages, include_size);  
-                        }
+                    // for (auto splitcommand : split_commands) {
+                        
+                    // }
+                    std::cout << "FIRST COMMAND TESTING: \n" << split_commands[0] << std::endl;
 
+                    std::vector<std::string> split_data = splitString(data, '\n');
+
+                    std::vector<std::string> messages;
+                    readFile(dir_, dbfilename_, storage_);
+                    bool include_size = false;
+                    if (split_data[2] == "ECHO") {
+                        // Echos back message
+                        messages.push_back(split_data.back());
+                        write(messages, include_size);  
+                    }
+                    else if (split_data[2] == "SET") {
+                        // Saves data from user
+                        std::string key = split_data[4];
+                        std::string value = split_data[6];
+                        std::time_t expiry_time = 0;
+                        if (split_data.size() >= 11 && split_data[8] == "px") {
+                            int expiry_ms = std::stoi(split_data[10]); // milliseconds
+                            auto expiry_time = std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_ms);
+                            (*storage_)[key] = std::make_tuple(value, expiry_time);
+                        } else {
+                            // Use a distant future time if no expiry is specified
+                            (*storage_)[key] = std::make_tuple(value, TimePoint::max());
+                        }
+                        
+                        if (!is_replica_) { // propagate if not replica and respond
+                            messages.push_back("OK");
+                            std::cout << "PROPGATING Following Data: " << data << std::endl;
+                            for (auto& replica_session : g_replica_sessions) {
+                                if (replica_session) {
+                                    replica_session->propagate(data);
+                                }
+                            }
+                            write(messages, include_size);  
+                        } else { // continue to read for replicas
+                            read();
+                        }
+                    } 
+                    else if (split_data[2] == "GET")
+                    {
+                        // Get data from storage
+                        std::string key = split_data[4];
+
+                        auto it = storage_->find(key);
+                        if (it == storage_->end()) {
+                        } else {
+                            std::string stored_value = std::get<0>(it -> second);
+                            TimePoint expiry_time = std::get<1>(it -> second);
+                            
+                            std::cout << "TIME NOW at expiry FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
+                            std::cout << "TIME NOW..: " << std::chrono::system_clock::now().time_since_epoch().count() << std::endl;
+                            if (std::chrono::system_clock::now() > expiry_time) {
+                                storage_->erase(it);
+                            } else {
+                                messages.push_back(stored_value);
+                            }
+                        }   
+                        write(messages, include_size);      
+                    }
+                    else if (split_data[2] == "CONFIG") 
+                    {
+                        // Get config details
+                        if (split_data[4] == "GET") {
+                            std::string param_name = split_data[6];
+                            std::string param_value = dir_;
+                            messages.push_back(param_name);
+                            messages.push_back(param_value);
+                        }
+                        write(messages, include_size);  
+                    }
+                    else if (split_data[2] == "KEYS") {
+                        // Get keys of redis
+                        for (const auto &entry : *storage_) {
+                            messages.push_back(entry.first);
+                        }
+                        include_size = true;
+                        write(messages, include_size);  
+                    }
+                    else if (split_data[2] == "INFO") {
+                        if (masterdetails_ == "") {
+                            // Master
+                            std::string role = "role:master";
+                            std::string master_repl_offset = "nmaster_repl_offset:0";
+                            std::string nmaster_replid = "nmaster_replid:";
+                            nmaster_replid += master_repl_id_;
+                            std::string message = role + "\r\n" + master_repl_offset + "\r\n" + nmaster_replid;
+                            messages.push_back(message);
+                        } else {
+                            // Not Master
+                            messages.push_back("role:slave");
+                        }
+                        write(messages, include_size);  
+                    }
+                    else if (split_data[2] == "REPLCONF") {
+                        // Second Part of handshake with replicas
+                        messages.push_back("OK");
+                        write(messages, include_size);  
+                    }
+                    else if (split_data[2] == "PSYNC") {
+                        // Third Part of handshake with replicas
+                        std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
+                        messages.push_back(message);
+                        write(messages, include_size);
+
+                        g_replica_sessions.push_back(shared_from_this());
+
+                        std::string empty_rdb = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
+                        std::string return_msg = "$" + std::to_string(empty_rdb.length()) + "\r\n" + empty_rdb;
+                        manual_write(return_msg);
+                    }
+                    else {
+                        messages.push_back("PONG");
+                        write(messages, include_size);  
                     }
                 } else {
                     // Handle errors (including client disconnects)
