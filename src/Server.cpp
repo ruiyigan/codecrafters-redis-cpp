@@ -218,18 +218,22 @@ private:
                     std::string data = std::string(buffer_.data(), length);
                     std::cout << "Received: \n" << data << std::endl;
 
+
                     // Split multiple commands into individual command
-                    std::vector<std::string> split_commands = splitRedisCommands(data);
+                    // std::vector<std::string> split_commands = splitRedisCommands(data);
 
                     // for (auto splitcommand : split_commands) {
                         
                     // }
-                    std::cout << "FIRST COMMAND TESTING: \n" << split_commands[0] << std::endl;
+                    // std::cout << "FIRST COMMAND TESTING: \n" << split_commands[0] << std::endl;
 
-                    std::vector<std::string> split_data = splitString(data, '\n');
-
-                    std::vector<std::string> messages;
+                    
+                    // Reading RDB File
+                    // TODO: Bring this out of read function
                     readFile(dir_, dbfilename_, storage_);
+                    
+                    std::vector<std::string> split_data = splitString(data, '\n');
+                    std::vector<std::string> messages;
                     bool include_size = false;
                     if (split_data[2] == "ECHO") {
                         // Echos back message
