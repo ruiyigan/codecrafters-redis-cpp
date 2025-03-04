@@ -218,10 +218,15 @@ private:
 
                     // std::cout << "COMMAND RECEIVED: \n" << split_command << std::endl;
                     std::cout << "Received first char: \n" << data[0] << std::endl;
-                    processData(data);
-                    // for (auto split_command : split_commands) {
-                        
-                    // }
+                    if (data[0] == '*') {
+                        // Split multiple commands into individual command
+                        std::vector<std::string> split_commands = splitRedisCommands(data);
+                        for (auto split_command : split_commands) {
+                            processData(data);
+                        }
+                    } else {
+                        processData(data);
+                    }
                 } else {
                     // Handle errors (including client disconnects)
                     if (ec != asio::error::eof) {
