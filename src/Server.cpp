@@ -62,7 +62,6 @@ private:
         asio::async_write(socket_, asio::buffer(command),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
-                    read();
                 } else {
                     std::cerr << "Error propagating command: " << ec.message() << std::endl;
                 }
@@ -222,9 +221,9 @@ private:
                             // Use a distant future time if no expiry is specified
                             (*storage_)[key] = std::make_tuple(value, TimePoint::max());
                         }
-                        messages.push_back("OK");
                         
                         if (!is_replica_) { // propagate if not replica and respond
+                            messages.push_back("OK");
                             std::cout << "PROPGATING Following Data: " << data << std::endl;
                             for (auto& replica_session : g_replica_sessions) {
                                 if (replica_session) {
@@ -243,6 +242,7 @@ private:
 
                         auto it = storage_->find(key);
                         if (it == storage_->end()) {
+                            std::cout << "data recived from master " << data << std::endl;
                         } else {
                             std::string stored_value = std::get<0>(it -> second);
                             TimePoint expiry_time = std::get<1>(it -> second);
