@@ -57,6 +57,36 @@ private:
         return tokens;
     }
 
+    std::vector<std::string> parseRESP(const std::string& data) {
+        std::vector<std::string> tokens;
+        size_t pos = 0;
+        size_t len = data.size();
+
+        if (pos < len && data[pos] == '*') {
+            // Get the number of elements
+            size_t end_line = data.find("\r\n", pos);
+            if (end_line == std::string::npos)
+                return tokens;
+            int num_elements = std::stoi(data.substr(pos + 1, end_line - pos - 1));
+            pos = end_line + 2;
+            for (int i = 0; i < num_elements; i++) {
+                if (pos < len && data[pos] == '$') {
+                    size_t bulk_end = data.find("\r\n", pos);
+                    if (bulk_end == std::string::npos)
+                        break;
+                    int bulk_length = std::stoi(data.substr(pos + 1, bulk_end - pos - 1));
+                    pos = bulk_end + 2;
+                    if (pos + bulk_length > len)
+                        break;
+                    std::string token = data.substr(pos, bulk_length);
+                    tokens.push_back(token);
+                    pos += bulk_length + 2;  // Skip the trailing "\r\n"
+                }
+            }
+        }
+        return tokens;
+    }
+    
     void propagate(const std::string &command) {
         auto self(shared_from_this());
         asio::async_write(socket_, asio::buffer(command),
@@ -198,6 +228,11 @@ private:
                 if (!ec) {
                     std::string data = std::string(buffer_.data(), length);
                     std::cout << "Received: \n" << data << std::endl;
+                    std::vector<std::string> split_commands = splitString(data, '*');
+                    unsigned length_commands = split_commands.size();
+
+                    std::cout << "NUMBER OF COMMANDS \n" << std::to_string(length_commands) << std::endl;
+
                     std::vector<std::string> split_data = splitString(data, '\n');
 
                     std::vector<std::string> messages;
@@ -242,7 +277,6 @@ private:
 
                         auto it = storage_->find(key);
                         if (it == storage_->end()) {
-                            std::cout << "data recived from master " << data << std::endl;
                         } else {
                             std::string stored_value = std::get<0>(it -> second);
                             TimePoint expiry_time = std::get<1>(it -> second);
