@@ -225,7 +225,7 @@ private:
                     // for (auto splitcommand : split_commands) {
                         
                     // }
-                    // std::cout << "FIRST COMMAND TESTING: \n" << split_commands[0] << std::endl;
+                    std::cout << "FIRST COMMAND TESTING: \n" << split_commands[0] << std::endl;
 
                     
                     // Reading RDB File
