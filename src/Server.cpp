@@ -88,173 +88,6 @@ private:
             });
     }
 
-    // Helper to read size based on RDB format
-    uint64_t readDecodedSize(std::ifstream &file) {
-        char first_byte;
-        file.get(first_byte);
-        unsigned char unsigned_first_byte = static_cast<unsigned char>(first_byte);
-        int type = (first_byte & 0xC0) >> 6;
-        uint64_t length = 0;
-
-        if (type == 0) {
-            length = unsigned_first_byte & 0x3F; // 00111111
-        } else if (type == 1) {
-            char second_byte;
-            file.get(second_byte);
-            length = unsigned_first_byte & 0x3F + static_cast<unsigned char>(second_byte);
-        } else if (type == 2) {
-            unsigned char buf[4];
-            file.read(reinterpret_cast<char*>(buf), 4);
-            length = (uint64_t)buf[0]
-               | ((uint64_t)buf[1] << 24)
-               | ((uint64_t)buf[2] << 16)
-               | ((uint64_t)buf[3] << 8);
-        } else {
-            length = 0; // string encoding, ignored for now
-        }
-        return length;
-    }
-    
-    // Helper to read expiry based on RDB format
-    TimePoint readExpiry(std::ifstream &file, unsigned char umarker) {
-        TimePoint expiry = TimePoint::max();
-        if (umarker == 0xFC) {
-            // Read 8-byte expiry (milliseconds)
-            unsigned char buff[8];
-            file.read(reinterpret_cast<char*>(buff), 8);
-            auto expiry_ms = (uint64_t)buff[0]
-                            | ((uint64_t)buff[1] << 8)
-                            | ((uint64_t)buff[2] << 16)
-                            | ((uint64_t)buff[3] << 24)
-                            | ((uint64_t)buff[4] << 32)
-                            | ((uint64_t)buff[5] << 40)
-                            | ((uint64_t)buff[6] << 48)
-                            | ((uint64_t)buff[7] << 56);
-            expiry = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
-        } else if (umarker == 0xFD) {
-            // Read 4-byte expiry (seconds)
-            unsigned char buff[4];
-            file.read(reinterpret_cast<char*>(buff), 4);
-            auto expiry_s = (uint64_t)buff[0]
-                          | ((uint64_t)buff[1] << 8)
-                          | ((uint64_t)buff[2] << 16)
-                          | ((uint64_t)buff[3] << 24);
-            expiry = std::chrono::system_clock::time_point(std::chrono::seconds(expiry_s));
-        } else {
-            // If no valid expiry marker is found, you might decide to push the marker back,
-            // or simply assume no expiry. Here, we simply treat it as "no expiry".
-            file.unget();
-        }
-        return expiry;
-    }
-
-    // Helper to read string based on RDB format
-    std::string readString(std::ifstream &file) {
-        int size = readDecodedSize(file);
-        std::vector<char> buffer(size);
-        file.read(buffer.data(), size);
-        return std::string(buffer.data(), size);
-    }
-
-    void readFile(const std::string& dir, const std::string& filename, std::shared_ptr<StorageType> storage_) {
-        std::string filepath = dir + "/" + filename;
-
-        if (!std::filesystem::exists(filepath)) {
-            std::cerr << "File does not exist: " << filepath << std::endl;
-            return;
-        }
-
-        std::ifstream file(filepath, std::ios::binary);
-        if (!file.is_open()) {
-            throw std::runtime_error("Could not open file: " + filepath);
-        }
-
-        char ch;
-        uint64_t size;
-        uint64_t size_with_expiry;
-        bool is_database = false;
-        while (file.get(ch)) {
-            unsigned char byte = static_cast<unsigned char>(ch);
-            if (byte == 0xFB && !is_database) {
-                size = readDecodedSize(file);
-                size_with_expiry = readDecodedSize(file);
-                is_database = true;
-                continue;
-            }
-
-            if (is_database) { // Reached database section
-                TimePoint expiry_time = TimePoint::max();
-                if ((static_cast<unsigned char>(ch) == 0xFC)) {
-                    expiry_time = readExpiry(file, 0xFC);
-                    file.get(ch);
-                } else if ((static_cast<unsigned char>(ch) == 0xFD)) {
-                    expiry_time = readExpiry(file, 0xFD);
-                    file.get(ch);
-                }
-
-                if (static_cast<unsigned char>(ch) == 0x00) {
-                    std::string key = readString(file);
-                    if (key.empty()) {
-                        break;
-                    }
-                    std::string value = readString(file);   
-                    std::cout << "KEY FROM RDB..: " << key << std::endl;
-                    std::cout << "VALUE FROM RDB..: " << value << std::endl;
-                    std::cout << "EXPIRY FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
-                    (*storage_)[key] = std::make_tuple(value, expiry_time);
-                } 
-            }
-            
-        }
-    }
-
-    void loadDatabase(const std::string &dir, const std::string &dbfilename, std::shared_ptr<StorageType> storage) {
-        std::string filepath = dir + "/" + dbfilename;
-        if (!std::filesystem::exists(filepath)) {
-            std::cerr << "File does not exist: " << filepath << std::endl;
-            return;
-        }
-        std::ifstream file(filepath, std::ios::binary);
-        if (!file.is_open()) {
-            throw std::runtime_error("Could not open file: " + filepath);
-        }
-    
-        char ch;
-        uint64_t size;
-        uint64_t size_with_expiry;
-        bool is_database = false;
-        while (file.get(ch)) {
-            unsigned char byte = static_cast<unsigned char>(ch);
-            if (byte == 0xFB && !is_database) {
-                size = readDecodedSize(file);
-                size_with_expiry = readDecodedSize(file);
-                is_database = true;
-                continue;
-            }
-    
-            if (is_database) { // Process the database section
-                TimePoint expiry_time = TimePoint::max();
-                if (static_cast<unsigned char>(ch) == 0xFC) {
-                    expiry_time = readExpiry(file, 0xFC);
-                    file.get(ch);
-                } else if (static_cast<unsigned char>(ch) == 0xFD) {
-                    expiry_time = readExpiry(file, 0xFD);
-                    file.get(ch);
-                }
-    
-                if (static_cast<unsigned char>(ch) == 0x00) {
-                    std::string key = readString(file);
-                    if (key.empty()) {
-                        break;
-                    }
-                    std::string value = readString(file);
-                    std::cout << "Loaded key: " << key << ", value: " << value << std::endl;
-                    (*storage)[key] = std::make_tuple(value, expiry_time);
-                }
-            }
-        }
-    }
-
     void read() {
         // Capture a shared_ptr to keep object alive during async operation, all shared pointer shares the same reference count
         auto self(shared_from_this());
@@ -598,6 +431,123 @@ void connectToMaster(asio::io_context& io_context,
         }
     );
 }
+
+// Helper to read size based on RDB format
+uint64_t readDecodedSize(std::ifstream &file) {
+    char first_byte;
+    file.get(first_byte);
+    unsigned char unsigned_first_byte = static_cast<unsigned char>(first_byte);
+    int type = (first_byte & 0xC0) >> 6;
+    uint64_t length = 0;
+
+    if (type == 0) {
+        length = unsigned_first_byte & 0x3F; // 00111111
+    } else if (type == 1) {
+        char second_byte;
+        file.get(second_byte);
+        length = unsigned_first_byte & 0x3F + static_cast<unsigned char>(second_byte);
+    } else if (type == 2) {
+        unsigned char buf[4];
+        file.read(reinterpret_cast<char*>(buf), 4);
+        length = (uint64_t)buf[0]
+            | ((uint64_t)buf[1] << 24)
+            | ((uint64_t)buf[2] << 16)
+            | ((uint64_t)buf[3] << 8);
+    } else {
+        length = 0; // string encoding, ignored for now
+    }
+    return length;
+}
+
+// Helper to read expiry based on RDB format
+TimePoint readExpiry(std::ifstream &file, unsigned char umarker) {
+    TimePoint expiry = TimePoint::max();
+    if (umarker == 0xFC) {
+        // Read 8-byte expiry (milliseconds)
+        unsigned char buff[8];
+        file.read(reinterpret_cast<char*>(buff), 8);
+        auto expiry_ms = (uint64_t)buff[0]
+                        | ((uint64_t)buff[1] << 8)
+                        | ((uint64_t)buff[2] << 16)
+                        | ((uint64_t)buff[3] << 24)
+                        | ((uint64_t)buff[4] << 32)
+                        | ((uint64_t)buff[5] << 40)
+                        | ((uint64_t)buff[6] << 48)
+                        | ((uint64_t)buff[7] << 56);
+        expiry = std::chrono::system_clock::time_point(std::chrono::milliseconds(expiry_ms));
+    } else if (umarker == 0xFD) {
+        // Read 4-byte expiry (seconds)
+        unsigned char buff[4];
+        file.read(reinterpret_cast<char*>(buff), 4);
+        auto expiry_s = (uint64_t)buff[0]
+                        | ((uint64_t)buff[1] << 8)
+                        | ((uint64_t)buff[2] << 16)
+                        | ((uint64_t)buff[3] << 24);
+        expiry = std::chrono::system_clock::time_point(std::chrono::seconds(expiry_s));
+    } else {
+        // If no valid expiry marker is found, you might decide to push the marker back,
+        // or simply assume no expiry. Here, we simply treat it as "no expiry".
+        file.unget();
+    }
+    return expiry;
+}
+
+// Helper to read string based on RDB format
+std::string readString(std::ifstream &file) {
+    int size = readDecodedSize(file);
+    std::vector<char> buffer(size);
+    file.read(buffer.data(), size);
+    return std::string(buffer.data(), size);
+}
+
+void loadDatabase(const std::string &dir, const std::string &dbfilename, std::shared_ptr<StorageType> storage) {
+    std::string filepath = dir + "/" + dbfilename;
+    if (!std::filesystem::exists(filepath)) {
+        std::cerr << "File does not exist: " << filepath << std::endl;
+        return;
+    }
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open file: " + filepath);
+    }
+
+    char ch;
+    uint64_t size;
+    uint64_t size_with_expiry;
+    bool is_database = false;
+    while (file.get(ch)) {
+        unsigned char byte = static_cast<unsigned char>(ch);
+        if (byte == 0xFB && !is_database) {
+            size = readDecodedSize(file);
+            size_with_expiry = readDecodedSize(file);
+            is_database = true;
+            continue;
+        }
+
+        if (is_database) { // Process the database section
+            TimePoint expiry_time = TimePoint::max();
+            if (static_cast<unsigned char>(ch) == 0xFC) {
+                expiry_time = readExpiry(file, 0xFC);
+                file.get(ch);
+            } else if (static_cast<unsigned char>(ch) == 0xFD) {
+                expiry_time = readExpiry(file, 0xFD);
+                file.get(ch);
+            }
+
+            if (static_cast<unsigned char>(ch) == 0x00) {
+                std::string key = readString(file);
+                if (key.empty()) {
+                    break;
+                }
+                std::string value = readString(file);
+                std::cout << "Loaded key: " << key << ", value: " << value << std::endl;
+                (*storage)[key] = std::make_tuple(value, expiry_time);
+            }
+        }
+    }
+}
+
+
 int main(int argc, char* argv[]) {
     try {
         asio::io_context io_context;
@@ -633,7 +583,7 @@ int main(int argc, char* argv[]) {
         
         auto storage = std::make_shared<StorageType>();  // Use tuple storage
         loadDatabase(dir, dbfilename, storage);
-        
+
         // Start accepting connections
         accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset);
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
