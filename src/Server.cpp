@@ -217,6 +217,7 @@ private:
                     // std::vector<std::string> split_commands = splitRedisCommands(data);
 
                     // std::cout << "COMMAND RECEIVED: \n" << split_command << std::endl;
+                    std::cout << "Received first char: \n" << data[0] << std::endl;
                     processData(data);
                     // for (auto split_command : split_commands) {
                         
