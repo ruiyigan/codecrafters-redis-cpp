@@ -208,6 +208,53 @@ private:
         }
     }
 
+    void loadDatabase(const std::string &dir, const std::string &dbfilename, std::shared_ptr<StorageType> storage) {
+        std::string filepath = dir + "/" + dbfilename;
+        if (!std::filesystem::exists(filepath)) {
+            std::cerr << "File does not exist: " << filepath << std::endl;
+            return;
+        }
+        std::ifstream file(filepath, std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("Could not open file: " + filepath);
+        }
+    
+        char ch;
+        uint64_t size;
+        uint64_t size_with_expiry;
+        bool is_database = false;
+        while (file.get(ch)) {
+            unsigned char byte = static_cast<unsigned char>(ch);
+            if (byte == 0xFB && !is_database) {
+                size = readDecodedSize(file);
+                size_with_expiry = readDecodedSize(file);
+                is_database = true;
+                continue;
+            }
+    
+            if (is_database) { // Process the database section
+                TimePoint expiry_time = TimePoint::max();
+                if (static_cast<unsigned char>(ch) == 0xFC) {
+                    expiry_time = readExpiry(file, 0xFC);
+                    file.get(ch);
+                } else if (static_cast<unsigned char>(ch) == 0xFD) {
+                    expiry_time = readExpiry(file, 0xFD);
+                    file.get(ch);
+                }
+    
+                if (static_cast<unsigned char>(ch) == 0x00) {
+                    std::string key = readString(file);
+                    if (key.empty()) {
+                        break;
+                    }
+                    std::string value = readString(file);
+                    std::cout << "Loaded key: " << key << ", value: " << value << std::endl;
+                    (*storage)[key] = std::make_tuple(value, expiry_time);
+                }
+            }
+        }
+    }
+
     void read() {
         // Capture a shared_ptr to keep object alive during async operation, all shared pointer shares the same reference count
         auto self(shared_from_this());
@@ -216,11 +263,6 @@ private:
             // Lambda captures 'this' and self (shared_ptr) for proper lifetime
             [this, self](asio::error_code ec, std::size_t length) {
                 if (!ec) {
-                    // Reading RDB File
-                    // TODO: Bring this out of read function
-                    readFile(dir_, dbfilename_, storage_);
-
-
                     std::string data = std::string(buffer_.data(), length);
                     std::cout << "Received: \n" << data << std::endl;
 
@@ -248,7 +290,6 @@ private:
                                 auto expiry_time = std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_ms);
                                 (*storage_)[key] = std::make_tuple(value, expiry_time);
                             } else {
-                                // Use a distant future time if no expiry is specified
                                 (*storage_)[key] = std::make_tuple(value, TimePoint::max());
                             }
                             
@@ -422,6 +463,7 @@ void accept_connections(
             if (!ec) {
                 std::make_shared<Session>(std::move(socket), storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset)->start();
                 std::cout << "Client connected" << std::endl;
+                
             }
             accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset); // Recursively continues to listen for new connections 
         });
@@ -590,7 +632,8 @@ int main(int argc, char* argv[]) {
         tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), portnumber));
         
         auto storage = std::make_shared<StorageType>();  // Use tuple storage
-
+        loadDatabase(dir, dbfilename, storage);
+        
         // Start accepting connections
         accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset);
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
