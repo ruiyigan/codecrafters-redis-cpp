@@ -227,8 +227,9 @@ private:
                     // Split multiple commands into individual command
                     std::vector<std::string> split_commands = splitRedisCommands(data);
 
-                    for (auto splitcommand : split_commands) {
-                        std::vector<std::string> split_data = splitString(splitcommand, '\n');
+                    for (auto split_command : split_commands) {
+                        std::cout << "COMMAND RECEIVED: \n" << split_command << std::endl;
+                        std::vector<std::string> split_data = splitString(split_command, '\n');
                         std::vector<std::string> messages;
                         bool include_size = false;
                         if (split_data[2] == "ECHO") {
