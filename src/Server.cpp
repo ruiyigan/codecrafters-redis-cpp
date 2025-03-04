@@ -230,6 +230,8 @@ private:
                                 }
                             }
                             write(messages, include_size);  
+                        } else { // continue to read for replicas
+                            read();
                         }
                     } 
                     else if (split_data[2] == "GET")
