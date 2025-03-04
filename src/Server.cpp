@@ -500,6 +500,7 @@ std::string readString(std::ifstream &file) {
     return std::string(buffer.data(), size);
 }
 
+
 void loadDatabase(const std::string &dir, const std::string &dbfilename, std::shared_ptr<StorageType> storage) {
     std::string filepath = dir + "/" + dbfilename;
     if (!std::filesystem::exists(filepath)) {
