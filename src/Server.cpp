@@ -38,7 +38,7 @@ public:
         is_replica_ = replica;
     }
 
-    static std::vector<std::shared_ptr<Session>> g_replica_sessions;
+    inline static std::vector<std::shared_ptr<Session>> g_replica_sessions;
 
 private:
     // Helper function to split string based on delimiter provided
