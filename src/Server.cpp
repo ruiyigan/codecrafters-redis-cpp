@@ -81,6 +81,7 @@ private:
         asio::async_write(socket_, asio::buffer(command),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
+                    read();
                 } else {
                     std::cerr << "Error propagating command: " << ec.message() << std::endl;
                 }
