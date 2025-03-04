@@ -69,7 +69,7 @@ private:
                     token.pop_back();
                 // Check if token begins with a digit (this is a naive check to ensure it's a command)
                 if (!token.empty() && std::isdigit(token[0])) {
-                    tokens.push_back(token);
+                    tokens.push_back("*" + token);
                 }
             }
         }
@@ -211,17 +211,12 @@ private:
                 if (!ec) {
                     std::string data = std::string(buffer_.data(), length);
                     std::cout << "Received: \n" << data << std::endl;
-
-
-                    // Split multiple commands into individual command
-                    // std::vector<std::string> split_commands = splitRedisCommands(data);
-
-                    // std::cout << "COMMAND RECEIVED: \n" << split_command << std::endl;
                     std::cout << "Received first char: \n" << data[0] << std::endl;
                     if (data[0] == '*') {
                         // Split multiple commands into individual command
                         std::vector<std::string> split_commands = splitRedisCommands(data);
                         for (auto split_command : split_commands) {
+                            // std::cout << "COMMAND RECEIVED: \n" << split_command << std::endl;
                             processData(split_command);
                         }
                     } else {
