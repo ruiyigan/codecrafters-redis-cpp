@@ -100,8 +100,6 @@ private:
                     throw std::runtime_error("Incomplete simple string command.");
                 // Extract the command (including the terminating CRLF)
                 std::string command = s.substr(0, endIndex + 2);
-                std::cout << "Bulk command from token + (complete): [" << command << "]\n";
-                std::cout << "Bulk command from AFTER token + (complete): [" << s.substr(endIndex + 2) << "]\n";
                 // Process the remaining string recursively.
                 parseRecursive(s.substr(endIndex + 2));
             }
@@ -115,11 +113,8 @@ private:
                 std::string lengthStr = s.substr(1, headerEnd - 1);
                 int bulkLength = std::stoi(lengthStr);
                 // Calculate total length: header + CRLF + bulk data + CRLF
-                std::cout << "headerend" << headerEnd << "]\n";
-                std::cout << "bulkLength" << bulkLength << "]\n";
                 size_t totalLength = headerEnd + 2 + bulkLength; // rdb is like bulk string but without the trailing \r\n
 
-            
                 if (s.size() < totalLength) {
                     throw std::runtime_error("Wrong size for bulk string");
                 }
