@@ -46,6 +46,11 @@
         "optional": "cpp",
         "deque": "cpp",
         "__memory": "cpp",
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "__split_buffer": "cpp",
+        "array": "cpp",
+        "list": "cpp",
+        "queue": "cpp",
+        "stack": "cpp"
     }
 }

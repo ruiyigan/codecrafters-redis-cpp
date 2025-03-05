@@ -84,7 +84,67 @@ private:
             });
     }
 
-    void processData(const std::string data) {
+    void handleRedisCommands(const std::string &data) {
+        // https://redis.io/docs/latest/develop/reference/protocol-spec/#bulk-strings
+    
+        std::function<void(const std::string&)> parseRecursive = [&](const std::string &s) {
+            if (s.empty()) {
+                read();
+                return;
+            }    
+            char token = s[0];
+            if (token == '+') {
+                // Simple string: look for the next "\r\n"
+                size_t endIndex = s.find("\r\n");
+                if (endIndex == std::string::npos)
+                    throw std::runtime_error("Incomplete simple string command.");
+                // Extract the command (including the terminating CRLF)
+                std::string command = s.substr(0, endIndex + 2);
+                std::cout << "Bulk command from token + (complete): [" << command << "]\n";
+                std::cout << "Bulk command from AFTER token + (complete): [" << s.substr(endIndex + 2) << "]\n";
+                // Process the remaining string recursively.
+                parseRecursive(s.substr(endIndex + 2));
+            }
+            else if (token == '$') { // assume its only just rdb for now
+                // Bulk string: Format "$<length>\r\n<data>\r\n"
+                size_t headerEnd = s.find("\r\n");
+                if (headerEnd == std::string::npos) {
+                    std::cerr << "Incomplete bulk string header. Skipping remainder.\n";
+                    return;
+                }
+                std::string lengthStr = s.substr(1, headerEnd - 1);
+                int bulkLength = std::stoi(lengthStr);
+                // Calculate total length: header + CRLF + bulk data + CRLF
+                std::cout << "headerend" << headerEnd << "]\n";
+                std::cout << "bulkLength" << bulkLength << "]\n";
+                size_t totalLength = headerEnd + 2 + bulkLength; // rdb is like bulk string but without the trailing \r\n
+
+            
+                if (s.size() < totalLength) {
+                    throw std::runtime_error("Wrong size for bulk string");
+                }
+                std::string command = s.substr(0, totalLength);
+                // Process the remaining data recursively.
+                parseRecursive(s.substr(totalLength));
+            }
+            else if (token == '*') {
+                // Multi-bulk arrays: assume no commands after
+                std::vector<std::string> split_commands = splitRedisCommands(s);
+                for (auto split_command : split_commands) {
+                    processArrayData(split_command);
+                }
+                return;
+            }
+            else {
+                throw std::runtime_error("Unknown command type starting with: " + std::string(1, token));
+            }
+        };
+    
+        parseRecursive(data);
+        // return commands;
+    }
+
+    void processArrayData(const std::string data) {
         std::vector<std::string> split_data = splitString(data, '\n');
         std::vector<std::string> messages;
         bool include_size = false;
@@ -108,7 +168,6 @@ private:
             
             if (!is_replica_) { // propagate if not replica and respond
                 messages.push_back("OK");
-                std::cout << "PROPGATING Following Data: " << data << std::endl;
                 for (auto& replica_session : g_replica_sessions) {
                     if (replica_session) {
                         replica_session->propagate(data);
@@ -130,8 +189,6 @@ private:
                 std::string stored_value = std::get<0>(it -> second);
                 TimePoint expiry_time = std::get<1>(it -> second);
                 
-                std::cout << "TIME NOW at expiry FROM RDB..: " << expiry_time.time_since_epoch().count() << std::endl;
-                std::cout << "TIME NOW..: " << std::chrono::system_clock::now().time_since_epoch().count() << std::endl;
                 if (std::chrono::system_clock::now() > expiry_time) {
                     storage_->erase(it);
                 } else {
@@ -175,9 +232,13 @@ private:
             write(messages, include_size);  
         }
         else if (split_data[2] == "REPLCONF") {
-            // Second Part of handshake with replicas
-            messages.push_back("OK");
-            write(messages, include_size);  
+            if (is_replica_ && split_data[4] == "GETACK") {
+                manual_write("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n");
+            } else {
+                // Second Part of handshake with replicas
+                messages.push_back("OK");
+                write(messages, include_size);  
+            }
         }
         else if (split_data[2] == "PSYNC") {
             // Third Part of handshake with replicas
@@ -207,17 +268,7 @@ private:
                 if (!ec) {
                     std::string data = std::string(buffer_.data(), length);
                     std::cout << "Received: \n" << data << std::endl;
-                    std::cout << "Received first char: \n" << data[0] << std::endl;
-                    if (data[0] == '*') {
-                        // Split multiple commands into individual command
-                        std::vector<std::string> split_commands = splitRedisCommands(data);
-                        for (auto split_command : split_commands) {
-                            // std::cout << "COMMAND RECEIVED: \n" << split_command << std::endl;
-                            processData(split_command);
-                        }
-                    } else {
-                        processData(data);
-                    }
+                    handleRedisCommands(data);
                 } else {
                     // Handle errors (including client disconnects)
                     if (ec != asio::error::eof) {
@@ -240,6 +291,7 @@ private:
                 }
             });
     }
+    // Write with formatting, adding size of all messages and size of individual message
     void write(std::vector<std::string> messages, bool size = false) {
         // Similar to read function, creates a shared pointer
         auto self(shared_from_this());
