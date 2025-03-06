@@ -98,7 +98,7 @@ private:
             });
     }
 
-    void processValidArray(std::string data) {
+    void processCommands(std::string data) {
         size_t pos = data.find("\r\n");
         if (pos == std::string::npos) {
             std::cerr << "Invalid data: header not found." << std::endl;
@@ -109,12 +109,13 @@ private:
         std::vector<std::string> split_commands = splitMultipleArrayCommands(data);
         std::cout << "Number of split commands: " << split_commands.size() << std::endl;
         for (auto split_command : split_commands) {
-            processArrayData(split_command);
+            processCommand(split_command);
         }
     }
 
     // Processes data and adds valid command into array
-    void getValidCommand(std::string data, std::vector<std::string>& validCommands) {
+    // Split data into each data type and their responding data: https://redis.io/docs/latest/develop/reference/protocol-spec/
+    void getValidDataTypeChunks(std::string data, std::vector<std::string>& validCommands) {
         size_t pos = data.find("\r\n");
         if (pos == std::string::npos) {
             std::cerr << "Invalid data" << std::endl;
@@ -129,7 +130,7 @@ private:
             if (data.size() > fullCommandLength) {
                 // Excess data, at least another command within
                 std::string remainingData = data.substr(fullCommandLength);
-                getValidCommand(remainingData, validCommands);
+                getValidDataTypeChunks(remainingData, validCommands);
             }
         } else if (token == '$') {
             // Find length of data first
@@ -149,8 +150,6 @@ private:
                 totalLength = headerEnd + 2 + bulkLength + 2;
             }
 
-            std::cout << "Length of data: " << data.size() << std::endl;
-            std::cout << "Expected Length of data: " << totalLength << std::endl;
             if (data.size() < totalLength) {
                 std::cout << "Insufficient data, need to get more data" << std::endl;
                 // TODO: Instead of throwing an exception, buffer the partial data and wait for additional bytes.
@@ -162,10 +161,10 @@ private:
                 validCommands.push_back(fullCommand);
                 std::string remainingData = data.substr(totalLength);
                 // Excess data, at least another command within
-                getValidCommand(remainingData, validCommands);
+                getValidDataTypeChunks(remainingData, validCommands);
             }
-        } else if (token == '*') {
-            // TODO: Currently assuming no insufficnet data or excess
+        } else if (token == '*') { // For now * used only for commands
+            // TODO: Currently assuming no insufficient data or excess
             std::vector<std::string> split_commands = splitMultipleArrayCommands(data);
             for (auto split_command : split_commands) {
                 validCommands.push_back(split_command);
@@ -175,20 +174,22 @@ private:
         }
     }
 
-    void processCommand(std::string command) {
+    void processDataByType(std::string command) {
         char token = command[0];
         if (token == '+') {
-            std::cout << "Processing valid simple string" << std::endl;
+            std::cout << "Processing data type simple string" << std::endl;
         } else if (token == '$') {
-            std::cout << "Processing valid bulk string" << std::endl;
-        } else if (token == '*') {
-            processValidArray(command);
+            std::cout << "Processing data type bulk string" << std::endl;
+        } else if (token == '*') { // For now * used only for commands
+            processCommands(command);
         } else {
             throw std::runtime_error("Unknown token: " + token);
         }
     }
 
     // Assume command receive is full command, no breaking
+    // Data received are either 1) Commands (these are array of bulk strings) 2) RESP type, starts with + * $ etc
+    // 1) send from master to replica or client to master 2) server replies or rdb file, not commands
     void read() {
         // https://redis.io/docs/latest/develop/reference/protocol-spec/#bulk-strings
         auto self(shared_from_this());
@@ -206,9 +207,9 @@ private:
                     std::string data = header + leftover;
                     std::vector<std::string> validCommands;
 
-                    getValidCommand(data, validCommands);
+                    getValidDataTypeChunks(data, validCommands);
                     for (auto command : validCommands) {
-                        processCommand(command);
+                        processDataByType(command);
                     }
                     read();
                     
@@ -221,8 +222,8 @@ private:
         );
     }
 
-    // Validate that command is of * array $ elements format (ie: array of bulk strings)
-    bool validateCompleteArrayCommand(const std::string& data) {
+    // Validate data is valid command (ie: array of bulk strings) https://redis.io/docs/latest/develop/reference/protocol-spec/#resp-protocol-description
+    bool isDataValidRedisCommand(const std::string& data) {
         // Check that data is not empty and starts with '*'
         if (data.empty() || data[0] != '*')
             return false;
@@ -275,8 +276,9 @@ private:
         return (index == data.size());
     }    
 
-    void processArrayData(const std::string data) {
-        if (!validateCompleteArrayCommand(data)) {
+    // Processes commands. Commands are sent in an array consisting of only bulk strings
+    void processCommand(const std::string data) {
+        if (!isDataValidRedisCommand(data)) {
             std::cout << "Command not of format array of bulk strings: " << data << std::endl;
             return;
         }
@@ -286,7 +288,9 @@ private:
         if (split_data[2] == "ECHO") {
             // Echos back message
             messages.push_back(split_data.back());
-            write(messages, include_size);  
+            if (!is_replica_) {
+                write(messages, include_size);  
+            }
         }
         else if (split_data[2] == "SET") {
             // Saves data from user
@@ -330,7 +334,9 @@ private:
                     messages.push_back(stored_value);
                 }
             }   
-            write(messages, include_size);      
+            if (!is_replica_) {
+                write(messages, include_size);      
+            }
         }
         else if (split_data[2] == "CONFIG") 
         {
@@ -341,7 +347,9 @@ private:
                 messages.push_back(param_name);
                 messages.push_back(param_value);
             }
-            write(messages, include_size);  
+            if (!is_replica_) {
+                write(messages, include_size);  
+            }
         }
         else if (split_data[2] == "KEYS") {
             // Get keys of redis
@@ -349,7 +357,9 @@ private:
                 messages.push_back(entry.first);
             }
             include_size = true;
-            write(messages, include_size);  
+            if (!is_replica_) {
+                write(messages, include_size);  
+            }
         }
         else if (split_data[2] == "INFO") {
             if (masterdetails_ == "") {
@@ -364,33 +374,47 @@ private:
                 // Not Master
                 messages.push_back("role:slave");
             }
-            write(messages, include_size);  
-        }
-        else if (split_data[2] == "REPLCONF") {
-            if (is_replica_ && split_data[4] == "GETACK") {
-                manual_write("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n");
-            } else {
-                // Second Part of handshake with replicas
-                messages.push_back("OK");
+            if (!is_replica_) {
                 write(messages, include_size);  
             }
         }
+        else if (split_data[2] == "REPLCONF") {
+            if (is_replica_ && split_data[4] == "GETACK") {
+                std::cout << "Message sizes so far from master: " << messageSizes << std::endl;
+                std::string sizeStr = std::to_string(messageSizes);
+                manual_write("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$" + 
+                            std::to_string(sizeStr.length()) + "\r\n" + 
+                            sizeStr + "\r\n");
+            } else {
+                // Second Part of handshake with replicas
+                if (!is_replica_) {
+                    messages.push_back("OK");
+                    write(messages, include_size);  
+                }
+            }
+        }
         else if (split_data[2] == "PSYNC") {
-            // Third Part of handshake with replicas
-            std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
-            messages.push_back(message);
-            write(messages, include_size);
-
-            g_replica_sessions.push_back(shared_from_this());
-
-            std::string empty_rdb = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
-            std::string return_msg = "$" + std::to_string(empty_rdb.length()) + "\r\n" + empty_rdb;
-            manual_write(return_msg);
+            if (!is_replica_) {
+                // Third Part of handshake with replicas
+                std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
+                messages.push_back(message);
+                write(messages, include_size);
+    
+                g_replica_sessions.push_back(shared_from_this());
+    
+                std::string empty_rdb = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
+                std::string return_msg = "$" + std::to_string(empty_rdb.length()) + "\r\n" + empty_rdb;
+                manual_write(return_msg);
+            }
         }
         else {
-            messages.push_back("PONG");
-            write(messages, include_size);  
+            if (!is_replica_) {
+                messages.push_back("PONG");
+                write(messages, include_size);  
+            }
         }
+        // Adds commands received so far
+        messageSizes += data.size();
     }
 
     // Write without any parsing
@@ -446,6 +470,7 @@ private:
     std::string master_repl_id_;
     unsigned master_repl_offset_;
     bool is_replica_ = false;
+    size_t messageSizes = 0;
 };
 
 void accept_connections(

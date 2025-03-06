@@ -52,6 +52,18 @@
         "list": "cpp",
         "queue": "cpp",
         "stack": "cpp",
-        "__hash_table": "cpp"
+        "__hash_table": "cpp",
+        "any": "cpp",
+        "charconv": "cpp",
+        "codecvt": "cpp",
+        "condition_variable": "cpp",
+        "csignal": "cpp",
+        "forward_list": "cpp",
+        "fstream": "cpp",
+        "future": "cpp",
+        "iomanip": "cpp",
+        "print": "cpp",
+        "source_location": "cpp",
+        "memory": "cpp"
     }
 }
