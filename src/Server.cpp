@@ -53,25 +53,39 @@ private:
         return tokens;
     }
 
-    std::vector<std::string> splitRedisCommands(const std::string &input) {
+    // Splits multiple array commands up
+    std::vector<std::string> splitMultipleArrayCommands(const std::string &input) {
         std::vector<std::string> tokens;
-        std::stringstream stream(input);
-        std::string token;
-    
-        // Split based on '*' character
-        while (std::getline(stream, token, '*')) {
-            if (!token.empty()) {
-                if (token.back() == '\r')
-                    token.pop_back();
-                // Check if token begins with a digit (this is a naive check to ensure it's a command)
-                if (!token.empty() && std::isdigit(token[0])) {
-                    tokens.push_back("*" + token);
-                }
+        size_t pos = 0;
+        while (true) {
+            // Find an '*' that is immediately followed by a digit.
+            size_t start = input.find('*', pos);
+            if (start == std::string::npos)
+                break;
+            if (start + 1 >= input.size() || !std::isdigit(input[start + 1])) {
+                // If '*' is not followed by a digit, skip it.
+                pos = start + 1;
+                continue;
             }
+            // Look for the next '*' that is immediately followed by a digit.
+            size_t nextPos = start + 1;
+            size_t nextDelimiter = std::string::npos;
+            while ((nextPos = input.find('*', nextPos)) != std::string::npos) {
+                if (nextPos + 1 < input.size() && std::isdigit(input[nextPos + 1])) {
+                    nextDelimiter = nextPos;
+                    break;
+                }
+                nextPos++;
+            }
+            // If no next delimiter is found, take the rest of the input.
+            size_t end = (nextDelimiter != std::string::npos) ? nextDelimiter : input.size();
+            tokens.push_back(input.substr(start, end - start));
+            pos = end;
         }
         return tokens;
     }
     
+    // Sends data to replica
     void propagate(const std::string &command) {
         auto self(shared_from_this());
         asio::async_write(socket_, asio::buffer(command),
@@ -84,62 +98,188 @@ private:
             });
     }
 
-    void handleRedisCommands(const std::string &data) {
-        // https://redis.io/docs/latest/develop/reference/protocol-spec/#bulk-strings
-    
-        std::function<void(const std::string&)> parseRecursive = [&](const std::string &s) {
-            if (s.empty()) {
-                read();
-                return;
-            }    
-            char token = s[0];
-            if (token == '+') {
-                // Simple string: look for the next "\r\n"
-                size_t endIndex = s.find("\r\n");
-                if (endIndex == std::string::npos)
-                    throw std::runtime_error("Incomplete simple string command.");
-                // Extract the command (including the terminating CRLF)
-                std::string command = s.substr(0, endIndex + 2);
-                // Process the remaining string recursively.
-                parseRecursive(s.substr(endIndex + 2));
-            }
-            else if (token == '$') { // assume its only just rdb for now
-                // Bulk string: Format "$<length>\r\n<data>\r\n"
-                size_t headerEnd = s.find("\r\n");
-                if (headerEnd == std::string::npos) {
-                    std::cerr << "Incomplete bulk string header. Skipping remainder.\n";
-                    return;
-                }
-                std::string lengthStr = s.substr(1, headerEnd - 1);
-                int bulkLength = std::stoi(lengthStr);
-                // Calculate total length: header + CRLF + bulk data + CRLF
-                size_t totalLength = headerEnd + 2 + bulkLength; // rdb is like bulk string but without the trailing \r\n
+    void processValidArray(std::string data) {
+        size_t pos = data.find("\r\n");
+        if (pos == std::string::npos) {
+            std::cerr << "Invalid data: header not found." << std::endl;
+            return;
+        }
 
-                if (s.size() < totalLength) {
-                    throw std::runtime_error("Wrong size for bulk string");
-                }
-                std::string command = s.substr(0, totalLength);
-                // Process the remaining data recursively.
-                parseRecursive(s.substr(totalLength));
-            }
-            else if (token == '*') {
-                // Multi-bulk arrays: assume no commands after
-                std::vector<std::string> split_commands = splitRedisCommands(s);
-                for (auto split_command : split_commands) {
-                    processArrayData(split_command);
-                }
-                return;
-            }
-            else {
-                throw std::runtime_error("Unknown command type starting with: " + std::string(1, token));
-            }
-        };
-    
-        parseRecursive(data);
-        // return commands;
+        // In the event got multiple element of type array in the array
+        std::vector<std::string> split_commands = splitMultipleArrayCommands(data);
+        std::cout << "Number of split commands: " << split_commands.size() << std::endl;
+        for (auto split_command : split_commands) {
+            processArrayData(split_command);
+        }
     }
 
+    // Processes data and adds valid command into array
+    void getValidCommand(std::string data, std::vector<std::string>& validCommands) {
+        size_t pos = data.find("\r\n");
+        if (pos == std::string::npos) {
+            std::cerr << "Invalid data" << std::endl;
+            return;
+        }
+        // Data is at least ...\r\n
+        char token = data[0];
+        if (token == '+') {
+            size_t fullCommandLength = pos + 2;
+            std::string fullCommand = data.substr(0, fullCommandLength);
+            validCommands.push_back(fullCommand);
+            if (data.size() > fullCommandLength) {
+                // Excess data, at least another command within
+                std::string remainingData = data.substr(fullCommandLength);
+                getValidCommand(remainingData, validCommands);
+            }
+        } else if (token == '$') {
+            // Find length of data first
+            size_t headerEnd = data.find("\r\n");
+            if (headerEnd == std::string::npos) {
+                std::cerr << "Incomplete bulk string header. Skipping remainder.\n";
+                return;
+            }
+            std::string lengthStr = data.substr(1, headerEnd - 1);
+            int bulkLength = std::stoi(lengthStr);
+            
+            // Calculate total length: header + CRLF + bulk data + CRLF (if not rdb)
+            size_t totalLength;
+            if (data.find("REDIS") != std::string::npos) {
+                totalLength = headerEnd + 2 + bulkLength; // rdb is like bulk string but without the trailing \r\n
+            } else {
+                totalLength = headerEnd + 2 + bulkLength + 2;
+            }
+
+            std::cout << "Length of data: " << data.size() << std::endl;
+            std::cout << "Expected Length of data: " << totalLength << std::endl;
+            if (data.size() < totalLength) {
+                std::cout << "Insufficient data, need to get more data" << std::endl;
+                // TODO: Instead of throwing an exception, buffer the partial data and wait for additional bytes.
+            } else if (data.size() == totalLength) {
+                std::string fullCommand = data;
+                validCommands.push_back(fullCommand);
+            } else {
+                std::string fullCommand = data.substr(0, totalLength);
+                validCommands.push_back(fullCommand);
+                std::string remainingData = data.substr(totalLength);
+                // Excess data, at least another command within
+                getValidCommand(remainingData, validCommands);
+            }
+        } else if (token == '*') {
+            // TODO: Currently assuming no insufficnet data or excess
+            std::vector<std::string> split_commands = splitMultipleArrayCommands(data);
+            for (auto split_command : split_commands) {
+                validCommands.push_back(split_command);
+            }
+        } else {
+            std::cout << "New token, not yet handled" << std::endl;
+        }
+    }
+
+    void processCommand(std::string command) {
+        char token = command[0];
+        if (token == '+') {
+            std::cout << "Processing valid simple string" << std::endl;
+        } else if (token == '$') {
+            std::cout << "Processing valid bulk string" << std::endl;
+        } else if (token == '*') {
+            processValidArray(command);
+        } else {
+            throw std::runtime_error("Unknown token: " + token);
+        }
+    }
+
+    // Assume command receive is full command, no breaking
+    void read() {
+        // https://redis.io/docs/latest/develop/reference/protocol-spec/#bulk-strings
+        auto self(shared_from_this());
+        auto response_buffer = std::make_shared<std::string>();
+        asio::async_read_until(
+            socket_,
+            asio::dynamic_buffer(*response_buffer),
+            "\r\n",
+            [this, self, response_buffer](asio::error_code ec, std::size_t length) {
+                if (!ec) {
+                    // Header and leftover not very useful now as data is sent as a whole without breaking
+                    // Hence, always has left over which is essentially the part after data
+                    std::string header = response_buffer->substr(0, length);
+                    std::string leftover = response_buffer->substr(length);     
+                    std::string data = header + leftover;
+                    std::vector<std::string> validCommands;
+
+                    getValidCommand(data, validCommands);
+                    for (auto command : validCommands) {
+                        processCommand(command);
+                    }
+                    read();
+                    
+                } else {
+                    if (ec != asio::error::eof) {
+                        std::cerr << "Read error: " << ec.message() << std::endl;
+                    }
+                }
+            }
+        );
+    }
+
+    // Validate that command is of * array $ elements format (ie: array of bulk strings)
+    bool validateCompleteArrayCommand(const std::string& data) {
+        // Check that data is not empty and starts with '*'
+        if (data.empty() || data[0] != '*')
+            return false;
+        
+        // Find end of array header (e.g., "*3\r\n")
+        size_t pos = data.find("\r\n");
+        if (pos == std::string::npos)
+            return false;
+        
+        // Parse the expected number of elements.
+        int expectedElements;
+        try {
+            expectedElements = std::stoi(data.substr(1, pos - 1));
+        } catch (const std::exception&) {
+            return false;
+        }
+        
+        // Initialize index after the header.
+        size_t index = pos + 2;
+        
+        for (int i = 0; i < expectedElements; i++) {
+            // Ensure the next character exists and is the bulk string marker '$'
+            if (index >= data.size() || data[index] != '$')
+                return false;
+            
+            // Find the end of the bulk string header (e.g., "$8\r\n")
+            size_t pos2 = data.find("\r\n", index);
+            if (pos2 == std::string::npos)
+                return false;
+            
+            // Parse the declared length for this bulk string.
+            int bulkLength;
+            try {
+                bulkLength = std::stoi(data.substr(index + 1, pos2 - index - 1));
+            } catch (const std::exception&) {
+                return false;
+            }
+            
+            // Calculate the starting index of the bulk data.
+            size_t startData = pos2 + 2;
+            
+            // Check if there are enough bytes for the bulk data plus the trailing "\r\n"
+            if (startData + bulkLength + 2 > data.size())
+                return false;
+            
+            index = startData + bulkLength + 2;
+        }
+        
+        // The command is complete only if we have parsed exactly all data.
+        return (index == data.size());
+    }    
+
     void processArrayData(const std::string data) {
+        if (!validateCompleteArrayCommand(data)) {
+            std::cout << "Command not of format array of bulk strings: " << data << std::endl;
+            return;
+        }
         std::vector<std::string> split_data = splitString(data, '\n');
         std::vector<std::string> messages;
         bool include_size = false;
@@ -253,26 +393,6 @@ private:
         }
     }
 
-    void read() {
-        // Capture a shared_ptr to keep object alive during async operation, all shared pointer shares the same reference count
-        auto self(shared_from_this());
-        
-        socket_.async_read_some(asio::buffer(buffer_),
-            // Lambda captures 'this' and self (shared_ptr) for proper lifetime
-            [this, self](asio::error_code ec, std::size_t length) {
-                if (!ec) {
-                    std::string data = std::string(buffer_.data(), length);
-                    std::cout << "Received: \n" << data << std::endl;
-                    handleRedisCommands(data);
-                } else {
-                    // Handle errors (including client disconnects)
-                    if (ec != asio::error::eof) {
-                        std::cerr << "Read error: " << ec.message() << std::endl;
-                    }
-                }
-            });
-    }
-
     // Write without any parsing
     void manual_write(std::string message) {
         auto self(shared_from_this());
@@ -286,6 +406,7 @@ private:
                 }
             });
     }
+
     // Write with formatting, adding size of all messages and size of individual message
     void write(std::vector<std::string> messages, bool size = false) {
         // Similar to read function, creates a shared pointer
@@ -545,7 +666,6 @@ std::string readString(std::ifstream &file) {
     return std::string(buffer.data(), size);
 }
 
-
 void loadDatabase(const std::string &dir, const std::string &dbfilename, std::shared_ptr<StorageType> storage) {
     std::string filepath = dir + "/" + dbfilename;
     if (!std::filesystem::exists(filepath)) {
@@ -592,7 +712,6 @@ void loadDatabase(const std::string &dir, const std::string &dbfilename, std::sh
         }
     }
 }
-
 
 int main(int argc, char* argv[]) {
     try {

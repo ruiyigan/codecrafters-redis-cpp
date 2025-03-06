@@ -51,6 +51,7 @@
         "array": "cpp",
         "list": "cpp",
         "queue": "cpp",
-        "stack": "cpp"
+        "stack": "cpp",
+        "__hash_table": "cpp"
     }
 }
