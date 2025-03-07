@@ -407,6 +407,10 @@ private:
                 manual_write(return_msg);
             }
         }
+        else if (split_data[2] == "WAIT") {
+            // Sending as RESP Integer Data Type https://redis.io/docs/latest/develop/reference/protocol-spec/#integers
+            manual_write(":0\r\n");
+        }
         else {
             if (!is_replica_) {
                 messages.push_back("PONG");
