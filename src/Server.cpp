@@ -477,7 +477,7 @@ private:
                     storage_->erase(it);
                     write_simple_string("none");
                 } else {
-                    manual_write("+string\r\n"); // TODO: For now everything stored is string
+                    write_simple_string("string"); // TODO: For now everything stored is string
                 }
             }   
         }
