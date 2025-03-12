@@ -205,6 +205,7 @@ private:
                     std::string header = response_buffer->substr(0, length);
                     std::string leftover = response_buffer->substr(length);     
                     std::string data = header + leftover;
+                    std::cout << "Data received: " << data << std::endl;
                     std::vector<std::string> validCommands;
 
                     getValidDataTypeChunks(data, validCommands);
@@ -276,6 +277,11 @@ private:
         return (index == data.size());
     }    
 
+    bool hasAcknowledged(size_t expectedOffset) {
+        std::cout << "Session " << this << " checking if " << lastAcknowledgedBytes << " >= " << expectedOffset << std::endl;
+        return lastAcknowledgedBytes >= expectedOffset;
+    }
+
     // Processes commands. Commands are sent in an array consisting of only bulk strings
     void processCommand(const std::string data) {
         if (!isDataValidRedisCommand(data)) {
@@ -307,6 +313,7 @@ private:
             
             if (!is_replica_) { // propagate if not replica and respond
                 messages.push_back("OK");
+                propagatedCommandSizes += data.size(); 
                 for (auto& replica_session : g_replica_sessions) {
                     if (replica_session) {
                         replica_session->propagate(data);
@@ -380,14 +387,20 @@ private:
         }
         else if (split_data[2] == "REPLCONF") {
             if (is_replica_ && split_data[4] == "GETACK") {
-                std::cout << "Message sizes so far from master: " << messageSizes << std::endl;
-                std::string sizeStr = std::to_string(messageSizes);
-                manual_write("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$" + 
-                            std::to_string(sizeStr.length()) + "\r\n" + 
-                            sizeStr + "\r\n");
-            } else {
-                // Second Part of handshake with replicas
-                if (!is_replica_) {
+                std::string sizeStr = std::to_string(commandFromMasterSizes);
+                std::string ackMsg = "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$" + 
+                         std::to_string(sizeStr.length()) + "\r\n" + 
+                         sizeStr + "\r\n";
+                std::cout << "Replica sending ACK: " << ackMsg << std::endl;
+                manual_write(ackMsg);
+            } else {    
+                if (!is_replica_ && split_data[4] == "ACK") {
+                    std::cout << "Master received ACK: " << data << std::endl;
+                    size_t acknowledgedBytes = std::stoull(split_data[6]);
+                    this->lastAcknowledgedBytes = acknowledgedBytes;
+                    std::cout << "Replica acknowledged " << acknowledgedBytes << " bytes for session " << this << std::endl;
+                } else {
+                    // Second Part of handshake with replicas
                     messages.push_back("OK");
                     write(messages, include_size);  
                 }
@@ -399,17 +412,69 @@ private:
                 std::string message = "+FULLRESYNC " + master_repl_id_ + " " + std::to_string(master_repl_offset_);
                 messages.push_back(message);
                 write(messages, include_size);
-    
                 g_replica_sessions.push_back(shared_from_this()); // new replica connected
-    
                 std::string empty_rdb = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
                 std::string return_msg = "$" + std::to_string(empty_rdb.length()) + "\r\n" + empty_rdb;
                 manual_write(return_msg);
             }
         }
         else if (split_data[2] == "WAIT") {
-            // Sending as RESP Integer Data Type https://redis.io/docs/latest/develop/reference/protocol-spec/#integers
-            manual_write(":" + std::to_string(g_replica_sessions.size()) + "\r\n");
+            int numReplicas = std::stoi(split_data[4]);
+            int timeoutMs = std::stoi(split_data[6]);
+            if (numReplicas == 0 || timeoutMs == 0) {
+                manual_write(":0\r\n");
+                return;
+            }
+            // Create a timer for the timeout
+            auto timer = std::make_shared<asio::steady_timer>(socket_.get_executor());
+            timer->expires_after(std::chrono::milliseconds(timeoutMs));
+        
+            // Store a reference to self to keep the session alive
+            auto self = shared_from_this();
+            
+            size_t offset = propagatedCommandSizes;
+
+            if (propagatedCommandSizes > 0) { // Only send GETACK if there’s something to acknowledge
+                std::string commandToGetACK = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+                for (auto& replica_session : g_replica_sessions) {
+                    if (replica_session) {
+                        replica_session->propagate(commandToGetACK);
+                    }
+                }
+                propagatedCommandSizes += commandToGetACK.size();
+            }
+            // Define a recursive function to check acknowledgments
+            std::function<void(const asio::error_code&)> checkAcks;
+
+            checkAcks = [this, self, timer, numReplicas, &checkAcks, offset](const asio::error_code& ec) {
+                if (ec) {
+                    // Timer was canceled or error occurred
+                    manual_write(":0\r\n");
+                    return;
+                }
+                // Count acknowledged replicas
+                int replicasAcknowledged = 0;
+                for (auto& replica_session : g_replica_sessions) {
+                    if (replica_session && replica_session->hasAcknowledged(offset)) {
+                        replicasAcknowledged++;
+                    }
+                }
+                
+                // Check if we've reached the target or timed out
+                if (replicasAcknowledged >= numReplicas || 
+                    timer->expiry() <= std::chrono::steady_clock::now()) {
+                        // Complete the operation
+                        manual_write(":" + std::to_string(replicasAcknowledged) + "\r\n");
+                        return;
+                    }
+                    
+                    // Otherwise, schedule another check after a short delay
+                    timer->expires_after(std::chrono::milliseconds(50));
+                    timer->async_wait(checkAcks);
+            };
+            
+            // Start the acknowledgment checking process
+            timer->async_wait(checkAcks);            
         }
         else {
             if (!is_replica_) {
@@ -418,7 +483,7 @@ private:
             }
         }
         // Adds commands received so far
-        messageSizes += data.size();
+        commandFromMasterSizes += data.size();
     }
 
     // Write without any parsing
@@ -474,7 +539,9 @@ private:
     std::string master_repl_id_;
     unsigned master_repl_offset_;
     bool is_replica_ = false;
-    size_t messageSizes = 0;
+    size_t commandFromMasterSizes = 0;
+    size_t propagatedCommandSizes = 0;
+    size_t lastAcknowledgedBytes = 0;
 };
 
 void accept_connections(
