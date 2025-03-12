@@ -468,16 +468,16 @@ private:
 
             auto it = storage_->find(key);
             if (it == storage_->end()) {
-                write_simple_string("none");
+                manual_write("+none\r\n");
             } else {
                 std::string stored_value = std::get<0>(it -> second);
                 TimePoint expiry_time = std::get<1>(it -> second);
                 
                 if (std::chrono::system_clock::now() > expiry_time) {
                     storage_->erase(it);
-                    write_simple_string("none");
+                    manual_write("+none\r\n");
                 } else {
-                    write_simple_string("string"); // TODO: For now everything stored is string
+                    manual_write("+string\r\n"); // TODO: For now everything stored is string
                 }
             }   
         }
