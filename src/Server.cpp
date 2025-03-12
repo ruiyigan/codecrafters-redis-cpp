@@ -278,7 +278,6 @@ private:
     }    
 
     bool hasAcknowledged(size_t expectedOffset) {
-        std::cout << "Session " << this << " checking if " << lastAcknowledgedBytes << " >= " << expectedOffset << std::endl;
         return lastAcknowledgedBytes >= expectedOffset;
     }
 
@@ -294,9 +293,7 @@ private:
         if (split_data[2] == "ECHO") {
             // Echos back message
             messages.push_back(split_data.back());
-            if (!is_replica_) {
-                write(messages, include_size);  
-            }
+            write(messages, include_size); 
         }
         else if (split_data[2] == "SET") {
             // Saves data from user
@@ -341,9 +338,7 @@ private:
                     messages.push_back(stored_value);
                 }
             }   
-            if (!is_replica_) {
-                write(messages, include_size);      
-            }
+            write(messages, include_size);
         }
         else if (split_data[2] == "CONFIG") 
         {
@@ -354,9 +349,7 @@ private:
                 messages.push_back(param_name);
                 messages.push_back(param_value);
             }
-            if (!is_replica_) {
-                write(messages, include_size);  
-            }
+            write(messages, include_size); 
         }
         else if (split_data[2] == "KEYS") {
             // Get keys of redis
@@ -364,9 +357,7 @@ private:
                 messages.push_back(entry.first);
             }
             include_size = true;
-            if (!is_replica_) {
-                write(messages, include_size);  
-            }
+            write(messages, include_size);
         }
         else if (split_data[2] == "INFO") {
             if (masterdetails_ == "") {
@@ -381,9 +372,7 @@ private:
                 // Not Master
                 messages.push_back("role:slave");
             }
-            if (!is_replica_) {
-                write(messages, include_size);  
-            }
+            write(messages, include_size);
         }
         else if (split_data[2] == "REPLCONF") {
             if (is_replica_ && split_data[4] == "GETACK") {
@@ -391,14 +380,11 @@ private:
                 std::string ackMsg = "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$" + 
                          std::to_string(sizeStr.length()) + "\r\n" + 
                          sizeStr + "\r\n";
-                std::cout << "Replica sending ACK: " << ackMsg << std::endl;
                 manual_write(ackMsg);
             } else {    
                 if (!is_replica_ && split_data[4] == "ACK") {
-                    std::cout << "Master received ACK: " << data << std::endl;
                     size_t acknowledgedBytes = std::stoull(split_data[6]);
                     this->lastAcknowledgedBytes = acknowledgedBytes;
-                    std::cout << "Replica acknowledged " << acknowledgedBytes << " bytes for session " << this << std::endl;
                 } else {
                     // Second Part of handshake with replicas
                     messages.push_back("OK");
@@ -463,18 +449,37 @@ private:
                 // Check if we've reached the target or timed out
                 if (replicasAcknowledged >= numReplicas || 
                     timer->expiry() <= std::chrono::steady_clock::now()) {
-                        // Complete the operation
-                        manual_write(":" + std::to_string(replicasAcknowledged) + "\r\n");
-                        return;
-                    }
+                    // Complete the operation
+                    manual_write(":" + std::to_string(replicasAcknowledged) + "\r\n");
+                    return;
+                }
                     
-                    // Otherwise, schedule another check after a short delay
-                    timer->expires_after(std::chrono::milliseconds(50));
-                    timer->async_wait(checkAcks);
+                // Otherwise, schedule another check after a short delay
+                timer->expires_after(std::chrono::milliseconds(50));
+                timer->async_wait(checkAcks);
             };
             
             // Start the acknowledgment checking process
             timer->async_wait(checkAcks);            
+        }
+        else if (split_data[2] == "TYPE") {
+            // Get type of data from storage
+            std::string key = split_data[4];
+
+            auto it = storage_->find(key);
+            if (it == storage_->end()) {
+                write_simple_string("none");
+            } else {
+                std::string stored_value = std::get<0>(it -> second);
+                TimePoint expiry_time = std::get<1>(it -> second);
+                
+                if (std::chrono::system_clock::now() > expiry_time) {
+                    storage_->erase(it);
+                    write_simple_string("none");
+                } else {
+                    write_simple_string("string"); // TODO: For now everything stored is string
+                }
+            }   
         }
         else {
             if (!is_replica_) {
@@ -486,11 +491,26 @@ private:
         commandFromMasterSizes += data.size();
     }
 
+    // TODO: Write in different format simple string, bulk string, array
     // Write without any parsing
     void manual_write(std::string message) {
         auto self(shared_from_this());
         std::cout << "MESSAGE SENT (manual)..: " << message << std::endl;
         asio::async_write(socket_, asio::buffer(message, message.size()),
+            [this, self](asio::error_code ec, std::size_t /*length*/) {
+                if (!ec) {
+                    read();  // Continue reading after successful write
+                } else {
+                    std::cerr << "Write error: " << ec.message() << std::endl;
+                }
+            });
+    }
+
+    void write_simple_string(std::string message) {
+        auto self(shared_from_this());
+        std::string formatted_message = "+" + message + "\r\n";
+        std::cout << "MESSAGE SENT (simple string)..: " << formatted_message << std::endl;
+        asio::async_write(socket_, asio::buffer(formatted_message, formatted_message.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
                     read();  // Continue reading after successful write
