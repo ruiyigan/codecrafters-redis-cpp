@@ -508,8 +508,9 @@ private:
 
     void write_simple_string(std::string message) {
         auto self(shared_from_this());
-        std::cout << "MESSAGE SENT (simple string)..: " << message << std::endl;
-        asio::async_write(socket_, asio::buffer(message, message.size()),
+        std::string formatted_message = "+" + message + "\r\n";
+        std::cout << "MESSAGE SENT (simple string)..: " << formatted_message << std::endl;
+        asio::async_write(socket_, asio::buffer(formatted_message, formatted_message.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
                     read();  // Continue reading after successful write
