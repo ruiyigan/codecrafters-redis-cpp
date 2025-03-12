@@ -468,14 +468,14 @@ private:
 
             auto it = storage_->find(key);
             if (it == storage_->end()) {
-                manual_write("+none\r\n");
+                write_simple_string("none");
             } else {
                 std::string stored_value = std::get<0>(it -> second);
                 TimePoint expiry_time = std::get<1>(it -> second);
                 
                 if (std::chrono::system_clock::now() > expiry_time) {
                     storage_->erase(it);
-                    manual_write("+none\r\n");
+                    write_simple_string("none");
                 } else {
                     manual_write("+string\r\n"); // TODO: For now everything stored is string
                 }
@@ -508,9 +508,8 @@ private:
 
     void write_simple_string(std::string message) {
         auto self(shared_from_this());
-        std::string formatted_message = "+" + message + "\r\n";
-        std::cout << "MESSAGE SENT (simple string)..: " << formatted_message << std::endl;
-        asio::async_write(socket_, asio::buffer(formatted_message, formatted_message.size()),
+        std::cout << "MESSAGE SENT (simple string)..: " << message << std::endl;
+        asio::async_write(socket_, asio::buffer(message, message.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
                     read();  // Continue reading after successful write
