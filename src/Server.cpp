@@ -11,7 +11,8 @@
 // Use of type aliasing
 using asio::ip::tcp;  
 using TimePoint = std::chrono::system_clock::time_point;
-using StorageType = std::unordered_map<std::string, std::tuple<std::string, TimePoint>>;
+using StringStorageType = std::unordered_map<std::string, std::tuple<std::string, TimePoint>>;
+using StreamStorageType = std::unordered_map<std::string, std::tuple<std::string, std::vector<std::string>>>;
 
 // Session class handles each client connection. Inherits from enable_shared_from_this to allow safe shared_ptr management in async callbacks
 // When shared_from_this() called, a new shared_ptr created. Pointer exists as long as at least one async callback holding it
@@ -20,13 +21,13 @@ class Session : public std::enable_shared_from_this<Session> {
 public:
     Session(
         tcp::socket socket, 
-        std::shared_ptr<StorageType> storage,
+        std::shared_ptr<StringStorageType> storage,
         std::string dir,
         std::string dbfilename,
         std::string masterdetails,
         std::string master_repl_id,
         unsigned master_repl_offset
-    ) : socket_(std::move(socket)), storage_(storage), dir_(dir), dbfilename_(dbfilename), masterdetails_(masterdetails), master_repl_id_(master_repl_id), master_repl_offset_(master_repl_offset) {}
+    ) : socket_(std::move(socket)), string_storage_(storage), dir_(dir), dbfilename_(dbfilename), masterdetails_(masterdetails), master_repl_id_(master_repl_id), master_repl_offset_(master_repl_offset) {}
     void start() {
         read();  // Initiate first read
     }
@@ -303,9 +304,9 @@ private:
             if (split_data.size() >= 11 && split_data[8] == "px") {
                 int expiry_ms = std::stoi(split_data[10]); // milliseconds
                 auto expiry_time = std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_ms);
-                (*storage_)[key] = std::make_tuple(value, expiry_time);
+                (*string_storage_)[key] = std::make_tuple(value, expiry_time);
             } else {
-                (*storage_)[key] = std::make_tuple(value, TimePoint::max());
+                (*string_storage_)[key] = std::make_tuple(value, TimePoint::max());
             }
             
             if (!is_replica_) { // propagate if not replica and respond
@@ -326,14 +327,14 @@ private:
             // Get data from storage
             std::string key = split_data[4];
 
-            auto it = storage_->find(key);
-            if (it == storage_->end()) {
+            auto it = string_storage_->find(key);
+            if (it == string_storage_->end()) {
             } else {
                 std::string stored_value = std::get<0>(it -> second);
                 TimePoint expiry_time = std::get<1>(it -> second);
                 
                 if (std::chrono::system_clock::now() > expiry_time) {
-                    storage_->erase(it);
+                    string_storage_->erase(it);
                 } else {
                     messages.push_back(stored_value);
                 }
@@ -353,7 +354,7 @@ private:
         }
         else if (split_data[2] == "KEYS") {
             // Get keys of redis
-            for (const auto &entry : *storage_) {
+            for (const auto &entry : *string_storage_) {
                 messages.push_back(entry.first);
             }
             include_size = true;
@@ -464,22 +465,36 @@ private:
         }
         else if (split_data[2] == "TYPE") {
             // Get type of data from storage
-            std::string key = split_data[4];
+            std::string key = split_data[4]; // TODO: I think by right a key can only hold one type of data at a time
 
-            auto it = storage_->find(key);
-            if (it == storage_->end()) {
-                write_simple_string("none");
+            auto it_stream = stream_storage_->find(key);
+            if (it_stream != stream_storage_->end()) {
+                write_simple_string("stream");
             } else {
-                std::string stored_value = std::get<0>(it -> second);
-                TimePoint expiry_time = std::get<1>(it -> second);
-                
-                if (std::chrono::system_clock::now() > expiry_time) {
-                    storage_->erase(it);
+                auto it_string = string_storage_->find(key);
+                if (it_string == string_storage_->end()) {
                     write_simple_string("none");
                 } else {
-                    write_simple_string("string"); // TODO: For now everything stored is string
-                }
-            }   
+                    std::string stored_value = std::get<0>(it_string -> second);
+                    TimePoint expiry_time = std::get<1>(it_string -> second);
+                    
+                    if (std::chrono::system_clock::now() > expiry_time) {
+                        string_storage_->erase(it_string);
+                        write_simple_string("none");
+                    } else {
+                        write_simple_string("string"); 
+                    }
+                }   
+            }
+        }
+        else if (split_data[2] == "XADD") {
+            // Store stream data
+            std::string key = split_data[4];
+            std::string id = split_data[6];
+            
+            std::vector<std::string> subVector(split_data.begin() + 7, split_data.end());
+            (*stream_storage_)[key] = std::make_tuple(id, subVector);
+            write_bulk_string(id);
         }
         else {
             if (!is_replica_) {
@@ -510,6 +525,20 @@ private:
         auto self(shared_from_this());
         std::string formatted_message = "+" + message + "\r\n";
         std::cout << "MESSAGE SENT (simple string)..: " << formatted_message << std::endl;
+        asio::async_write(socket_, asio::buffer(formatted_message, formatted_message.size()),
+            [this, self](asio::error_code ec, std::size_t /*length*/) {
+                if (!ec) {
+                    read();  // Continue reading after successful write
+                } else {
+                    std::cerr << "Write error: " << ec.message() << std::endl;
+                }
+            });
+    }
+
+    void write_bulk_string(std::string message) {
+        auto self(shared_from_this());
+        std::string formatted_message = "$" + std::to_string(message.size()) + "\r\n" + message + "\r\n";
+        std::cout << "MESSAGE SENT (bulk string)..: " << formatted_message << std::endl;
         asio::async_write(socket_, asio::buffer(formatted_message, formatted_message.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
@@ -552,7 +581,8 @@ private:
     // Attributes of Session class
     tcp::socket socket_;          
     std::array<char, 1024> buffer_;  
-    std::shared_ptr<StorageType> storage_;
+    std::shared_ptr<StringStorageType> string_storage_;
+    std::shared_ptr<StreamStorageType> stream_storage_ = std::make_shared<StreamStorageType>();;
     std::string dir_;
     std::string dbfilename_;
     std::string masterdetails_;
@@ -566,7 +596,7 @@ private:
 
 void accept_connections(
         tcp::acceptor& acceptor, 
-        std::shared_ptr<StorageType> storage,
+        std::shared_ptr<StringStorageType> storage,
         std::string dir,
         std::string dbfilename,
         std::string masterdetails,
@@ -614,7 +644,7 @@ void readResponse(std::shared_ptr<tcp::socket> socket, const std::string& contex
 // Helper to perform handshake and establish connection with master by a replica
 void connectToMaster(asio::io_context& io_context, 
                      const std::string& masterdetails,
-                     std::shared_ptr<StorageType> storage,
+                     std::shared_ptr<StringStorageType> storage,
                      const std::string& dir,
                      const std::string& dbfilename,
                      const std::string& master_repl_id,
@@ -782,7 +812,7 @@ std::string readString(std::ifstream &file) {
     return std::string(buffer.data(), size);
 }
 
-void loadDatabase(const std::string &dir, const std::string &dbfilename, std::shared_ptr<StorageType> storage) {
+void loadDatabase(const std::string &dir, const std::string &dbfilename, std::shared_ptr<StringStorageType> storage) {
     std::string filepath = dir + "/" + dbfilename;
     if (!std::filesystem::exists(filepath)) {
         std::cerr << "File does not exist: " << filepath << std::endl;
@@ -862,7 +892,7 @@ int main(int argc, char* argv[]) {
         // Create acceptor listening on port 6379 if not specified
         tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), portnumber));
         
-        auto storage = std::make_shared<StorageType>();  // Use tuple storage
+        auto storage = std::make_shared<StringStorageType>();  // Use tuple storage
         loadDatabase(dir, dbfilename, storage);
 
         // Start accepting connections
