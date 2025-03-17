@@ -108,7 +108,6 @@ private:
 
         // In the event got multiple element of type array in the array
         std::vector<std::string> split_commands = splitMultipleArrayCommands(data);
-        std::cout << "Number of split commands: " << split_commands.size() << std::endl;
         for (auto split_command : split_commands) {
             processCommand(split_command);
         }
@@ -738,7 +737,6 @@ void connectToMaster(asio::io_context& io_context,
                     asio::buffer(ping_cmd),
                     [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, portnumber](asio::error_code ec, std::size_t /*length*/) {
                         if (!ec) {
-                            std::cout << "PING command sent successfully to master!" << std::endl;
                             readResponse(master_socket, "after PING", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, portnumber]() {
                                 // SECOND STEP SEND REPLCONF commands
                                 std::string port_str = std::to_string(portnumber);
@@ -752,14 +750,12 @@ void connectToMaster(asio::io_context& io_context,
                                     asio::buffer(first_replconf),
                                     [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset](asio::error_code ec, std::size_t /*length*/) {
                                         if (!ec) {
-                                            std::cout << "first_replconf command sent successfully to master!" << std::endl;
                                             std::string second_replconf = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
                                             asio::async_write(
                                                 *master_socket,
                                                 asio::buffer(second_replconf),
                                                 [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset](asio::error_code ec, std::size_t /*length*/) {
                                                     if (!ec) {
-                                                        std::cout << "second_replconf command sent successfully to master!" << std::endl;
                                                         readResponse(master_socket, "after REPLCONF", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset]() {
                                                             // THIRD STEP SEND PSYNC
                                                             std::string psync = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
@@ -768,7 +764,6 @@ void connectToMaster(asio::io_context& io_context,
                                                                 asio::buffer(psync),
                                                                 [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset](asio::error_code ec, std::size_t /*length*/) {
                                                                     if (!ec) {
-                                                                        std::cout << "PSYNC command sent successfully to master!" << std::endl;
                                                                         readResponse(master_socket, "after PSYNC", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset]() {
                                                                             std::cout << "Replication handshake complete. Switching to replica session." << std::endl;
                                                                             // Now, wrap the master_socket in a Session with replica mode enabled.
@@ -921,7 +916,6 @@ void loadDatabase(const std::string &dir, const std::string &dbfilename, std::sh
                     break;
                 }
                 std::string value = readString(file);
-                std::cout << "Loaded key: " << key << ", value: " << value << std::endl;
                 (*storage)[key] = std::make_tuple(value, expiry_time);
             }
         }
