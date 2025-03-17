@@ -510,10 +510,19 @@ private:
             // Store stream data
             std::string key = split_data[4];
             std::string id = split_data[6];
-            size_t dashPos_Id = id.find('-');
-            std::string leftPart_Id = id.substr(0, dashPos_Id);
-            std::string rightPart_Id = id.substr(dashPos_Id + 1);
+            std::string leftPart_Id, rightPart_Id;
             std::vector<std::string> subVector(split_data.begin() + 7, split_data.end());
+            if (id == "*") {
+                id = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+                leftPart_Id = id;
+                rightPart_Id = "0";
+            } else {
+                size_t dashPos_Id = id.find('-');
+                leftPart_Id = id.substr(0, dashPos_Id);
+                rightPart_Id = id.substr(dashPos_Id + 1);
+
+            }
 
             auto it_stream = stream_storage_->find(key);
             if (it_stream == stream_storage_->end()) {
@@ -538,8 +547,8 @@ private:
                 } else {
                     if (rightPart_Id == "*") {
                         size_t dashPos_id_last_entry = id_last_entry.find('-');
-                        std::string leftPart_Id_last_entry = id_last_entry.substr(0, dashPos_Id);
-                        int rightPart_Id_last_entry = std::stoi(id_last_entry.substr(dashPos_Id + 1));
+                        std::string leftPart_Id_last_entry = id_last_entry.substr(0, dashPos_id_last_entry);
+                        int rightPart_Id_last_entry = std::stoi(id_last_entry.substr(dashPos_id_last_entry + 1));
                         rightPart_Id_last_entry += 1;
 
                         if (std::stoi(leftPart_Id) > std::stoi(leftPart_Id_last_entry)) {
