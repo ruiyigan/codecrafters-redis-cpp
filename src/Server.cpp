@@ -287,14 +287,12 @@ private:
         size_t dashPos_oldId = oldId.find('-');
         int leftPart_newId = std::stoi(newId.substr(0, dashPos_newId));
         std::string rightPart_newId = newId.substr(dashPos_newId + 1);
-        
         int leftPart_oldId = std::stoi(oldId.substr(0, dashPos_oldId)); // don't have * so can convert direct to int
         int rightPart_oldId = std::stoi(oldId.substr(dashPos_oldId + 1));
 
         if (leftPart_newId != leftPart_oldId) {
             return leftPart_newId > leftPart_oldId;
         }
-        
         // If left parts are equal, compare right parts
         // If right part is a wild card then return true
         if (rightPart_newId == "*") {
@@ -541,9 +539,15 @@ private:
                     if (rightPart_Id == "*") {
                         size_t dashPos_id_last_entry = id_last_entry.find('-');
                         std::string leftPart_Id_last_entry = id_last_entry.substr(0, dashPos_Id);
-                        int rightPart_Id_last_entry = std::stoi(id.substr(dashPos_Id + 1));
+                        int rightPart_Id_last_entry = std::stoi(id_last_entry.substr(dashPos_Id + 1));
                         rightPart_Id_last_entry += 1;
-                        id = leftPart_Id_last_entry + "-" + std::to_string(rightPart_Id_last_entry);
+
+                        if (std::stoi(leftPart_Id) > std::stoi(leftPart_Id_last_entry)) {
+                            // if right side bigger and even if right part is *, just go to the new sequence with x-0
+                            id = leftPart_Id + "-" + "0";
+                        } else {
+                            id = leftPart_Id_last_entry + "-" + std::to_string(rightPart_Id_last_entry);
+                        }
                     }
                     auto& vector_of_tuples = it_stream->second;
                     vector_of_tuples.push_back(std::make_tuple(id, subVector));
