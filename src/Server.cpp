@@ -517,7 +517,9 @@ private:
             if (it_stream == stream_storage_->end()) {
                 // create new entry in dictionary
                 std::vector<std::tuple<std::string, std::vector<std::string>>> new_entry;
-                if (rightPart_Id == "*") {
+                if (leftPart_Id == "0" && rightPart_Id == "*") {
+                    id = leftPart_Id + "-" + "1"; // since lowest is 0-1
+                } else if (rightPart_Id == "*") {
                     id = leftPart_Id + "-" + "0"; // default sequence number is 0
                 }
                 new_entry.push_back(std::make_tuple(id, subVector));
