@@ -508,12 +508,18 @@ private:
             // Store stream data
             std::string key = split_data[4];
             std::string id = split_data[6];
+            size_t dashPos_Id = id.find('-');
+            std::string leftPart_Id = id.substr(0, dashPos_Id);
+            std::string rightPart_Id = id.substr(dashPos_Id + 1);
             std::vector<std::string> subVector(split_data.begin() + 7, split_data.end());
 
             auto it_stream = stream_storage_->find(key);
             if (it_stream == stream_storage_->end()) {
                 // create new entry in dictionary
                 std::vector<std::tuple<std::string, std::vector<std::string>>> new_entry;
+                if (rightPart_Id == "*") {
+                    id = leftPart_Id + "-" + "0"; // default sequence number is 0
+                }
                 new_entry.push_back(std::make_tuple(id, subVector));
                 (*stream_storage_)[key] = new_entry;
                 write_bulk_string(id);
@@ -526,6 +532,13 @@ private:
                 } else if (!xaadIdIsGreaterThan(id, id_last_entry)) {
                     manual_write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
                 } else {
+                    if (rightPart_Id == "*") {
+                        size_t dashPos_id_last_entry = id_last_entry.find('-');
+                        std::string leftPart_Id_last_entry = id_last_entry.substr(0, dashPos_Id);
+                        int rightPart_Id_last_entry = std::stoi(id.substr(dashPos_Id + 1));
+                        rightPart_Id_last_entry += 1;
+                        id = leftPart_Id_last_entry + "-" + std::to_string(rightPart_Id_last_entry);
+                    }
                     auto& vector_of_tuples = it_stream->second;
                     vector_of_tuples.push_back(std::make_tuple(id, subVector));
                     write_bulk_string(id);
