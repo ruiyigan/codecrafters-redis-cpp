@@ -513,10 +513,11 @@ private:
             std::string leftPart_Id, rightPart_Id;
             std::vector<std::string> subVector(split_data.begin() + 7, split_data.end());
             if (id == "*") {
-                id = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::string generated_id = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count());
-                leftPart_Id = id;
+                leftPart_Id = generated_id;
                 rightPart_Id = "0";
+                id = leftPart_Id + "-" + rightPart_Id;
             } else {
                 size_t dashPos_Id = id.find('-');
                 leftPart_Id = id.substr(0, dashPos_Id);
