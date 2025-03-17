@@ -286,9 +286,9 @@ private:
         size_t dashPos_newId = newId.find('-');
         size_t dashPos_oldId = oldId.find('-');
         int leftPart_newId = std::stoi(newId.substr(0, dashPos_newId));
-        int rightPart_newId = std::stoi(newId.substr(dashPos_newId + 1));
+        std::string rightPart_newId = newId.substr(dashPos_newId + 1);
         
-        int leftPart_oldId = std::stoi(oldId.substr(0, dashPos_oldId));
+        int leftPart_oldId = std::stoi(oldId.substr(0, dashPos_oldId)); // don't have * so can convert direct to int
         int rightPart_oldId = std::stoi(oldId.substr(dashPos_oldId + 1));
 
         if (leftPart_newId != leftPart_oldId) {
@@ -296,7 +296,11 @@ private:
         }
         
         // If left parts are equal, compare right parts
-        return rightPart_newId > rightPart_oldId;
+        // If right part is a wild card then return true
+        if (rightPart_newId == "*") {
+            return true;
+        }
+        return std::stoi(rightPart_newId) > rightPart_oldId;
     }
 
     // Processes commands. Commands are sent in an array consisting of only bulk strings
