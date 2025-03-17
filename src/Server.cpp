@@ -12,7 +12,7 @@
 using asio::ip::tcp;  
 using TimePoint = std::chrono::system_clock::time_point;
 using StringStorageType = std::unordered_map<std::string, std::tuple<std::string, TimePoint>>;
-using StreamStorageType = std::unordered_map<std::string, std::tuple<std::string, std::vector<std::string>>>;
+using StreamStorageType = std::unordered_map<std::string, std::vector<std::tuple<std::string, std::vector<std::string>>>>;
 
 // Session class handles each client connection. Inherits from enable_shared_from_this to allow safe shared_ptr management in async callbacks
 // When shared_from_this() called, a new shared_ptr created. Pointer exists as long as at least one async callback holding it
@@ -282,6 +282,23 @@ private:
         return lastAcknowledgedBytes >= expectedOffset;
     }
 
+    bool xaadIdIsGreaterThan(const std::string& newId, const std::string& oldId) {
+        size_t dashPos_newId = newId.find('-');
+        size_t dashPos_oldId = oldId.find('-');
+        int leftPart_newId = std::stoi(newId.substr(0, dashPos_newId));
+        int rightPart_newId = std::stoi(newId.substr(dashPos_newId + 1));
+        
+        int leftPart_oldId = std::stoi(oldId.substr(0, dashPos_oldId));
+        int rightPart_oldId = std::stoi(oldId.substr(dashPos_oldId + 1));
+
+        if (leftPart_newId != leftPart_oldId) {
+            return leftPart_newId > leftPart_oldId;
+        }
+        
+        // If left parts are equal, compare right parts
+        return rightPart_newId > rightPart_oldId;
+    }
+
     // Processes commands. Commands are sent in an array consisting of only bulk strings
     void processCommand(const std::string data) {
         if (!isDataValidRedisCommand(data)) {
@@ -491,10 +508,29 @@ private:
             // Store stream data
             std::string key = split_data[4];
             std::string id = split_data[6];
-            
             std::vector<std::string> subVector(split_data.begin() + 7, split_data.end());
-            (*stream_storage_)[key] = std::make_tuple(id, subVector);
-            write_bulk_string(id);
+
+            auto it_stream = stream_storage_->find(key);
+            if (it_stream == stream_storage_->end()) {
+                // create new entry in dictionary
+                std::vector<std::tuple<std::string, std::vector<std::string>>> new_entry;
+                new_entry.push_back(std::make_tuple(id, subVector));
+                (*stream_storage_)[key] = new_entry;
+                write_bulk_string(id);
+            } else {
+                // check if entry is valid
+                const auto& last_tuple = it_stream->second.back();
+                std::string id_last_entry = std::get<0>(last_tuple);
+                if (!xaadIdIsGreaterThan(id, "0-0")) {
+                    manual_write("-ERR The ID specified in XADD must be greater than 0-0\r\n");
+                } else if (!xaadIdIsGreaterThan(id, id_last_entry)) {
+                    manual_write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+                } else {
+                    auto& vector_of_tuples = it_stream->second;
+                    vector_of_tuples.push_back(std::make_tuple(id, subVector));
+                    write_bulk_string(id);
+                }
+            }
         }
         else {
             if (!is_replica_) {
