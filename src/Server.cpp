@@ -344,7 +344,7 @@ private:
             
             bool include = false;
             if (end_id == "+") {
-                include = xaadIdIsGreaterThan(id, start_id);
+                include = xaadIdIsLessThan(id, end_id);
             } else {
                 include = (start_id == id || end_id == id || 
                         (xaadIdIsGreaterThan(id, start_id) && xaadIdIsLessThan(id, end_id)));
@@ -652,6 +652,29 @@ private:
 
             auto [entries_count, entries_data] = getStreamEntries(key, start_id, end_id);
             manual_write("*" + std::to_string(entries_count) + "\r\n" + entries_data);
+            // // access storage
+            // auto it_stream = stream_storage_->find(key);
+            // if (it_stream == stream_storage_->end()) {
+            //     // Key don't exist
+            // } else {
+                
+            //     // start from front to back
+            //     auto& vector_of_tuples = it_stream->second;
+            //     std::string message = "";
+            //     int messages_size = 0;
+            //     for (std::tuple<std::string, std::vector<std::string>> tuple: vector_of_tuples) {
+            //         std::string id = std::get<0>(tuple);
+            //         std::vector<std::string> values = std::get<1>(tuple);
+            //         std::string values_message;
+            //         if (start_id == id || end_id == id || (xaadIdIsGreaterThan(id, start_id) && xaadIdIsLessThan(id, end_id))) {
+            //             values_message = format_resp_array(values, true);
+            //             values_message = "*2\r\n$" + std::to_string(id.size()) + "\r\n" + id + "\r\n" + values_message;
+            //             messages_size += 1;
+            //             message += values_message;
+            //         }
+            //     }
+            //     manual_write("*" + std::to_string(messages_size) + "\r\n" + message);
+            // }
         }
         else if (split_data[2] == "XREAD" || split_data[2] == "xread") {
             // Find the "STREAMS" keyword
