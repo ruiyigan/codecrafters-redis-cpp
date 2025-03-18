@@ -322,6 +322,44 @@ private:
         return std::stoi(rightPart_newId) < rightPart_oldId;
     }
 
+    // Helper function to get stream entries that match criteria
+    std::pair<int, std::string> getStreamEntries(
+        const std::string& key,
+        const std::string& start_id,
+        const std::string& end_id = "+") {
+        
+        int entries_count = 0;
+        std::string entries_data = "";
+        
+        auto it_stream = stream_storage_->find(key);
+        if (it_stream == stream_storage_->end()) {
+            return {0, ""};
+        }
+        
+        // Start from front to back
+        auto& vector_of_tuples = it_stream->second;
+        for (const auto& tuple : vector_of_tuples) {
+            std::string id = std::get<0>(tuple);
+            std::vector<std::string> values = std::get<1>(tuple);
+            
+            bool include = false;
+            if (end_id == "+") {
+                include = xaadIdIsGreaterThan(id, start_id);
+            } else {
+                include = (start_id == id || end_id == id || 
+                        (xaadIdIsGreaterThan(id, start_id) && xaadIdIsLessThan(id, end_id)));
+            }
+            
+            if (include) {
+                std::string values_message = format_resp_array(values, true);
+                entries_data += "*2\r\n$" + std::to_string(id.size()) + "\r\n" + id + "\r\n" + values_message;
+                entries_count++;
+            }
+        }
+        
+        return {entries_count, entries_data};
+    }
+
     // Processes commands. Commands are sent in an array consisting of only bulk strings
     void processCommand(const std::string data) {
         if (!isDataValidRedisCommand(data)) {
@@ -612,56 +650,57 @@ private:
                 end_id = end_id + "-0";
             }
 
-            // access storage
-            auto it_stream = stream_storage_->find(key);
-            if (it_stream == stream_storage_->end()) {
-                // Key don't exist
-            } else {
-                // start from front to back
-                auto& vector_of_tuples = it_stream->second;
-                std::string message = "";
-                int messages_size = 0;
-                for (std::tuple<std::string, std::vector<std::string>> tuple: vector_of_tuples) {
-                    std::string id = std::get<0>(tuple);
-                    std::vector<std::string> values = std::get<1>(tuple);
-                    std::string values_message;
-                    if (start_id == id || end_id == id || (xaadIdIsGreaterThan(id, start_id) && xaadIdIsLessThan(id, end_id))) {
-                        values_message = format_resp_array(values);
-                        values_message = "*2\r\n$" + std::to_string(id.size()) + "\r\n" + id + "\r\n" + values_message;
-                        messages_size += 1;
-                        message += values_message;
-                    }
-                }
-                manual_write("*" + std::to_string(messages_size) + "\r\n" + message);
-            }
+            auto [entries_count, entries_data] = getStreamEntries(key, start_id, end_id);
+            manual_write("*" + std::to_string(entries_count) + "\r\n" + entries_data);
         }
         else if (split_data[2] == "XREAD" || split_data[2] == "xread") {
-            std::string key = split_data[6];
-            std::string start_id = split_data[8];
-
-            auto it_stream = stream_storage_->find(key);
-            if (it_stream == stream_storage_->end()) {
-                // Key don't exist
-            } else {
-                // start from front to back
-                auto& vector_of_tuples = it_stream->second;
-                std::string message = "";
-                int messages_size = 0;
-                for (std::tuple<std::string, std::vector<std::string>> tuple: vector_of_tuples) {
-                    std::string id = std::get<0>(tuple);
-                    std::vector<std::string> values = std::get<1>(tuple);
-                    std::string values_message;
-                    if (xaadIdIsGreaterThan(id, start_id)) {
-                        values_message = format_resp_array(values);
-                        values_message = "*2\r\n$" + std::to_string(id.size()) + "\r\n" + id + "\r\n" + values_message;
-                        messages_size += 1;
-                        message += values_message;
-                    }
+            // Find the "STREAMS" keyword
+            size_t streams_index = 0;
+            for (size_t i = 3; i < split_data.size(); i++) {
+                if (split_data[i] == "streams") {
+                    streams_index = i;
+                    break;
                 }
-                std::string message_without_key = "*" + std::to_string(messages_size) + "\r\n" + message;
-                std::string message_with_key = "*1\r\n*2\r\n$" + std::to_string(key.size()) + "\r\n" + key + "\r\n" + message_without_key;
-                manual_write(message_with_key);
             }
+            
+            if (streams_index == 0) {
+                manual_write("-ERR Syntax error\r\n");
+                return;
+            }
+            
+            // Extract the keys and IDs
+            std::vector<std::string> keys;
+            std::vector<std::string> ids;
+            
+            // Calculate where keys and IDs begin (since we know its half keys half ids)
+            size_t total_items = split_data.size() - streams_index - 1;
+            size_t num_keys = total_items / 2;
+            
+            // Extract keys (first half after "STREAMS")
+            for (size_t i = 1; i < num_keys; i+=2) {
+                keys.push_back(split_data[streams_index + 1 + i]);
+            }
+            
+            // Extract IDs (second half after keys)
+            for (size_t i = 1; i < num_keys; i+=2) {
+                ids.push_back(split_data[streams_index + 1 + num_keys + i]);
+            }
+            
+            // Process each stream
+            std::string result = "*" + std::to_string(keys.size()) + "\r\n";
+            for (size_t i = 0; i < keys.size(); i++) {
+                std::string key = keys[i];
+                std::string start_id = ids[i];
+                
+                // Use helper function to get stream entries
+                auto [entries_count, entries_data] = getStreamEntries(key, start_id);
+                
+                // Add this stream's results to the response
+                result += "*2\r\n$" + std::to_string(key.size()) + "\r\n" + key + "\r\n*" + 
+                         std::to_string(entries_count) + "\r\n" + entries_data;
+            }
+            
+            manual_write(result);
         }
         else {
             if (!is_replica_) {
@@ -673,11 +712,14 @@ private:
         commandFromMasterSizes += data.size();
     }
 
-    std::string format_resp_array(std::vector<std::string> messages) {
+    // TODO: Wrap stuff with this function
+    std::string format_resp_array(std::vector<std::string> messages, bool formatContent = false) {
         std::stringstream msg_stream;
         msg_stream << "*" << messages.size() << "\r\n";
-        for (std::string message: messages) {
-            msg_stream << "$" << message.size() << "\r\n" << message << "\r\n";
+        if (formatContent) {
+            for (std::string message: messages) {
+                msg_stream << "$" << message.size() << "\r\n" << message << "\r\n";
+            }
         }
 
         return msg_stream.str();
