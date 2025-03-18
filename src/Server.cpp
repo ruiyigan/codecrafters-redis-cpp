@@ -326,7 +326,7 @@ private:
     std::pair<int, std::string> getStreamEntries(
         const std::string& key,
         const std::string& start_id,
-        const std::string& end_id = "+") {
+        const std::string& end_id) {
         
         int entries_count = 0;
         std::string entries_data = "";
@@ -343,11 +343,11 @@ private:
             std::vector<std::string> values = std::get<1>(tuple);
             
             bool include = false;
-            if (end_id == "+") {
-                include = xaadIdIsLessThan(id, end_id);
-            } else {
+            if (end_id == "&") { // xread
+                include = xaadIdIsGreaterThan(id, start_id);
+            } else { // xrange
                 include = (start_id == id || end_id == id || 
-                        (xaadIdIsGreaterThan(id, start_id) && xaadIdIsLessThan(id, end_id)));
+                            (xaadIdIsGreaterThan(id, start_id) && xaadIdIsLessThan(id, end_id)));
             }
             
             if (include) {
@@ -716,7 +716,7 @@ private:
                 std::string start_id = ids[i];
                 
                 // Use helper function to get stream entries
-                auto [entries_count, entries_data] = getStreamEntries(key, start_id);
+                auto [entries_count, entries_data] = getStreamEntries(key, start_id, "&");
                 
                 // Add this stream's results to the response
                 result += "*2\r\n$" + std::to_string(key.size()) + "\r\n" + key + "\r\n*" + 
