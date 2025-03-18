@@ -596,7 +596,7 @@ private:
             std::string start_id = split_data[6];
             size_t dashPos_start_id = start_id.find('-');
             if (start_id == "-") {
-                start_id = "1-0"; // give the smallest possible id so that it will be the beginning of the stream
+                start_id = "0-1"; // give the smallest possible id so that it will be the beginning of the stream
             } else if (dashPos_start_id == std::string::npos) {
                 start_id = start_id + "-0";
             }
