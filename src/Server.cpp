@@ -594,11 +594,20 @@ private:
             std::string key = split_data[4];
             // get start
             std::string start_id = split_data[6];
+            size_t dashPos_start_id = start_id.find('-');
+            if (start_id == "-") {
+                start_id = "1-0"; // give the smallest possible id so that it will be the beginning of the stream
+            } else if (dashPos_start_id == std::string::npos) {
+                start_id = start_id + "-0";
+            }
             // get end
             std::string end_id = split_data[8];
+            size_t dashPos_end_id = end_id.find('-');
+            if (dashPos_end_id == std::string::npos) {
+                end_id = end_id + "-0";
+            }
 
-            // handle empty start or end id
-
+            // TODO: Handle - query
 
             // access storage
             auto it_stream = stream_storage_->find(key);
