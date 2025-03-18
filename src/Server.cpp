@@ -300,6 +300,25 @@ private:
         return std::stoi(rightPart_newId) > rightPart_oldId;
     }
 
+    bool xaadIdIsLessThan(const std::string& newId, const std::string& oldId) {
+        size_t dashPos_newId = newId.find('-');
+        size_t dashPos_oldId = oldId.find('-');
+        int leftPart_newId = std::stoi(newId.substr(0, dashPos_newId));
+        std::string rightPart_newId = newId.substr(dashPos_newId + 1);
+        int leftPart_oldId = std::stoi(oldId.substr(0, dashPos_oldId)); // don't have * so can convert direct to int
+        int rightPart_oldId = std::stoi(oldId.substr(dashPos_oldId + 1));
+
+        if (leftPart_newId != leftPart_oldId) {
+            return leftPart_newId < leftPart_oldId;
+        }
+        // If left parts are equal, compare right parts
+        // If right part is a wild card then return true
+        if (rightPart_newId == "*") {
+            return false;
+        }
+        return std::stoi(rightPart_newId) < rightPart_oldId;
+    }
+
     // Processes commands. Commands are sent in an array consisting of only bulk strings
     void processCommand(const std::string data) {
         if (!isDataValidRedisCommand(data)) {
@@ -505,12 +524,19 @@ private:
                 }   
             }
         }
-        else if (split_data[2] == "XADD") {
+        else if (split_data[2] == "XADD" || split_data[2] == "xadd") {
             // Store stream data
             std::string key = split_data[4];
             std::string id = split_data[6];
             std::string leftPart_Id, rightPart_Id;
-            std::vector<std::string> subVector(split_data.begin() + 7, split_data.end());
+            std::vector<std::string> values;
+            // Start at index 7 (after command, key, ID and their length prefixes)
+            for (size_t i = 7; i < split_data.size(); i += 2) {
+                // Skip the length indicator ($3) and include only the actual value
+                if (i + 1 < split_data.size()) {
+                    values.push_back(split_data[i + 1]);
+                }
+            }
             if (id == "*") {
                 std::string generated_id = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count());
@@ -533,7 +559,7 @@ private:
                 } else if (rightPart_Id == "*") {
                     id = leftPart_Id + "-" + "0"; // default sequence number is 0
                 }
-                new_entry.push_back(std::make_tuple(id, subVector));
+                new_entry.push_back(std::make_tuple(id, values));
                 (*stream_storage_)[key] = new_entry;
                 write_bulk_string(id);
             } else {
@@ -559,9 +585,42 @@ private:
                         }
                     }
                     auto& vector_of_tuples = it_stream->second;
-                    vector_of_tuples.push_back(std::make_tuple(id, subVector));
+                    vector_of_tuples.push_back(std::make_tuple(id, values));
                     write_bulk_string(id);
                 }
+            }
+        }
+        else if (split_data[2] == "XRANGE" || split_data[2] == "xrange") {
+            std::string key = split_data[4];
+            // get start
+            std::string start_id = split_data[6];
+            // get end
+            std::string end_id = split_data[8];
+
+            // handle empty start or end id
+
+
+            // access storage
+            auto it_stream = stream_storage_->find(key);
+            if (it_stream == stream_storage_->end()) {
+                // Key don't exist
+            } else {
+                // start from front to back
+                auto& vector_of_tuples = it_stream->second;
+                std::string message = "";
+                int messages_size = 0;
+                for (std::tuple<std::string, std::vector<std::string>> tuple: vector_of_tuples) {
+                    std::string id = std::get<0>(tuple);
+                    std::vector<std::string> values = std::get<1>(tuple);
+                    std::string values_message;
+                    if (start_id == id || end_id == id || (xaadIdIsGreaterThan(id, start_id) && xaadIdIsLessThan(id, end_id))) {
+                        values_message = format_resp_array(values);
+                        values_message = "*2\r\n$" + std::to_string(id.size()) + "\r\n" + id + "\r\n" + values_message;
+                        messages_size += 1;
+                        message += values_message;
+                    }
+                }
+                manual_write("*" + std::to_string(messages_size) + "\r\n" + message);
             }
         }
         else {
@@ -574,7 +633,16 @@ private:
         commandFromMasterSizes += data.size();
     }
 
-    // TODO: Write in different format simple string, bulk string, array
+    std::string format_resp_array(std::vector<std::string> messages) {
+        std::stringstream msg_stream;
+        msg_stream << "*" << messages.size() << "\r\n";
+        for (std::string message: messages) {
+            msg_stream << "$" << message.size() << "\r\n" << message << "\r\n";
+        }
+
+        return msg_stream.str();
+    }
+
     // Write without any parsing
     void manual_write(std::string message) {
         auto self(shared_from_this());
