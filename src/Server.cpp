@@ -301,6 +301,9 @@ private:
     }
 
     bool xaadIdIsLessThan(const std::string& newId, const std::string& oldId) {
+        if (oldId == "+") {
+            return true; // means max, always take till the end of the stream
+        }
         size_t dashPos_newId = newId.find('-');
         size_t dashPos_oldId = oldId.find('-');
         int leftPart_newId = std::stoi(newId.substr(0, dashPos_newId));
@@ -603,11 +606,11 @@ private:
             // get end
             std::string end_id = split_data[8];
             size_t dashPos_end_id = end_id.find('-');
-            if (dashPos_end_id == std::string::npos) {
+            if (end_id == "+") {
+                end_id = "+";
+            } else if (dashPos_end_id == std::string::npos) {
                 end_id = end_id + "-0";
             }
-
-            // TODO: Handle - query
 
             // access storage
             auto it_stream = stream_storage_->find(key);
