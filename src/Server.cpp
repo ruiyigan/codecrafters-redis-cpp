@@ -635,6 +635,34 @@ private:
                 manual_write("*" + std::to_string(messages_size) + "\r\n" + message);
             }
         }
+        else if (split_data[2] == "XREAD" || split_data[2] == "xread") {
+            std::string key = split_data[6];
+            std::string start_id = split_data[8];
+
+            auto it_stream = stream_storage_->find(key);
+            if (it_stream == stream_storage_->end()) {
+                // Key don't exist
+            } else {
+                // start from front to back
+                auto& vector_of_tuples = it_stream->second;
+                std::string message = "";
+                int messages_size = 0;
+                for (std::tuple<std::string, std::vector<std::string>> tuple: vector_of_tuples) {
+                    std::string id = std::get<0>(tuple);
+                    std::vector<std::string> values = std::get<1>(tuple);
+                    std::string values_message;
+                    if (xaadIdIsGreaterThan(id, start_id)) {
+                        values_message = format_resp_array(values);
+                        values_message = "*2\r\n$" + std::to_string(id.size()) + "\r\n" + id + "\r\n" + values_message;
+                        messages_size += 1;
+                        message += values_message;
+                    }
+                }
+                std::string message_without_key = "*" + std::to_string(messages_size) + "\r\n" + message;
+                std::string message_with_key = "*1\r\n*2\r\n$" + std::to_string(key.size()) + "\r\n" + key + "\r\n" + message_without_key;
+                manual_write(message_with_key);
+            }
+        }
         else {
             if (!is_replica_) {
                 messages.push_back("PONG");
