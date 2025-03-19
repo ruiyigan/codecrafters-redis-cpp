@@ -566,6 +566,13 @@ private:
             }
         }
         else if (split_data[2] == "XADD" || split_data[2] == "xadd") {
+            if (*isBlocked) {
+                // *isBlocked = std::make_shared<bool>(false); // unblock
+                if (std::chrono::system_clock::now() > *blocking_time) {
+                    write(messages);
+                    return;
+                }
+            }
             // Store stream data
             std::string key = split_data[4];
             std::string id = split_data[6];
@@ -602,7 +609,37 @@ private:
                 }
                 new_entry.push_back(std::make_tuple(id, values));
                 (*stream_storage_)[key] = new_entry;
-                write_bulk_string(id);
+                if (*isBlocked) {
+                    // std::string result = "*1\r\n";  // Outer array with 1 element
+                    // result += "*2\r\n";  // Each element is an array with 2 elements
+                    // result += "$" + std::to_string(key.length()) + "\r\n" + key + "\r\n";  // First element is the key
+                    // result += "*1\r\n";
+                    // result += "*2\r\n";  
+                    // result += "$" + std::to_string(id.length()) + "\r\n" + id + "\r\n"; // Stream id
+                    // result += format_resp_array(values, true);
+                    // manual_write(result);
+                    std::string result = "*1\r\n";  // Outer array with 1 element
+                    result += "*2\r\n";  // Each element is an array with 2 elements
+                    result += "$" + std::to_string(key.length()) + "\r\n" + key + "\r\n";  // First element is the key
+                    result += "*1\r\n";  // Array with 1 element (the new entry)
+                    result += "*2\r\n";  // Each entry is an array with 2 elements
+                    result += "$" + std::to_string(id.length()) + "\r\n" + id + "\r\n";  // First element is the ID
+                    
+                    // Format field-value pairs
+                    result += "*" + std::to_string(values.size() * 2) + "\r\n";  // Array with field-value pairs
+                    for (size_t i = 0; i < values.size(); i += 2) {
+                        if (i + 1 < values.size()) {
+                            // Add field
+                            result += "$" + std::to_string(values[i].length()) + "\r\n" + values[i] + "\r\n";
+                            // Add value
+                            result += "$" + std::to_string(values[i + 1].length()) + "\r\n" + values[i + 1] + "\r\n";
+                        }
+                    }
+                    
+                    manual_write(result);
+                } else {
+                    write_bulk_string(id);
+                }
             } else {
                 // check if entry is valid
                 const auto& last_tuple = it_stream->second.back();
@@ -627,7 +664,29 @@ private:
                     }
                     auto& vector_of_tuples = it_stream->second;
                     vector_of_tuples.push_back(std::make_tuple(id, values));
-                    write_bulk_string(id);
+                    if (*isBlocked) {
+                        std::string result = "*1\r\n";  // Outer array with 1 element
+                        result += "*2\r\n";  // Each element is an array with 2 elements
+                        result += "$" + std::to_string(key.length()) + "\r\n" + key + "\r\n";  // First element is the key
+                        result += "*1\r\n";  // Array with 1 element (the new entry)
+                        result += "*2\r\n";  // Each entry is an array with 2 elements
+                        result += "$" + std::to_string(id.length()) + "\r\n" + id + "\r\n";  // First element is the ID
+                        
+                        // Format field-value pairs
+                        result += "*" + std::to_string(values.size() * 2) + "\r\n";  // Array with field-value pairs
+                        for (size_t i = 0; i < values.size(); i += 2) {
+                            if (i + 1 < values.size()) {
+                                // Add field
+                                result += "$" + std::to_string(values[i].length()) + "\r\n" + values[i] + "\r\n";
+                                // Add value
+                                result += "$" + std::to_string(values[i + 1].length()) + "\r\n" + values[i + 1] + "\r\n";
+                            }
+                        }
+                        
+                        manual_write(result);
+                    } else {
+                        write_bulk_string(id);
+                    }
                 }
             }
         }
@@ -654,6 +713,25 @@ private:
             manual_write("*" + std::to_string(entries_count) + "\r\n" + entries_data);
         }
         else if (split_data[2] == "XREAD" || split_data[2] == "xread") {
+            // Find the "block" keyword
+            size_t block_index = 0;
+            for (size_t i = 0; i < split_data.size(); i++) {
+                if (split_data[i] == "block") {
+                    block_index = i;
+                    break;
+                }
+            }
+            if (block_index != 0) {
+                int block_duration_ms = std::stoi(split_data[block_index + 2]);
+    
+                // Calculate the timeout time (current time + blocking duration)
+                auto timeout_time = std::chrono::system_clock::now() + std::chrono::milliseconds(block_duration_ms);
+                
+                // Set the blocking_time
+                blocking_time = std::make_shared<TimePoint>(timeout_time);
+
+                isBlocked = std::make_shared<bool>(true); // Set it to blocking
+            }
             // Find the "STREAMS" keyword
             size_t streams_index = 0;
             for (size_t i = 3; i < split_data.size(); i++) {
@@ -810,6 +888,8 @@ private:
     size_t commandFromMasterSizes = 0;
     size_t propagatedCommandSizes = 0;
     size_t lastAcknowledgedBytes = 0;
+    std::shared_ptr<TimePoint> blocking_time;
+    std::shared_ptr<bool> isBlocked = std::make_shared<bool>(false);
 };
 
 void accept_connections(
