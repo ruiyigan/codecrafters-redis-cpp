@@ -610,14 +610,6 @@ private:
                 new_entry.push_back(std::make_tuple(id, values));
                 (*stream_storage_)[key] = new_entry;
                 if (*isBlocked) {
-                    // std::string result = "*1\r\n";  // Outer array with 1 element
-                    // result += "*2\r\n";  // Each element is an array with 2 elements
-                    // result += "$" + std::to_string(key.length()) + "\r\n" + key + "\r\n";  // First element is the key
-                    // result += "*1\r\n";
-                    // result += "*2\r\n";  
-                    // result += "$" + std::to_string(id.length()) + "\r\n" + id + "\r\n"; // Stream id
-                    // result += format_resp_array(values, true);
-                    // manual_write(result);
                     std::string result = "*1\r\n";  // Outer array with 1 element
                     result += "*2\r\n";  // Each element is an array with 2 elements
                     result += "$" + std::to_string(key.length()) + "\r\n" + key + "\r\n";  // First element is the key
@@ -626,15 +618,16 @@ private:
                     result += "$" + std::to_string(id.length()) + "\r\n" + id + "\r\n";  // First element is the ID
                     
                     // Format field-value pairs
-                    result += "*" + std::to_string(values.size() * 2) + "\r\n";  // Array with field-value pairs
-                    for (size_t i = 0; i < values.size(); i += 2) {
-                        if (i + 1 < values.size()) {
-                            // Add field
-                            result += "$" + std::to_string(values[i].length()) + "\r\n" + values[i] + "\r\n";
-                            // Add value
-                            result += "$" + std::to_string(values[i + 1].length()) + "\r\n" + values[i + 1] + "\r\n";
-                        }
-                    }
+                    result += format_resp_array(values, true);
+                    // result += "*" + std::to_string(values.size() * 2) + "\r\n";  // Array with field-value pairs
+                    // for (size_t i = 0; i < values.size(); i += 2) {
+                    //     if (i + 1 < values.size()) {
+                    //         // Add field
+                    //         result += "$" + std::to_string(values[i].length()) + "\r\n" + values[i] + "\r\n";
+                    //         // Add value
+                    //         result += "$" + std::to_string(values[i + 1].length()) + "\r\n" + values[i + 1] + "\r\n";
+                    //     }
+                    // }
                     
                     manual_write(result);
                 } else {
@@ -673,15 +666,7 @@ private:
                         result += "$" + std::to_string(id.length()) + "\r\n" + id + "\r\n";  // First element is the ID
                         
                         // Format field-value pairs
-                        result += "*" + std::to_string(values.size() * 2) + "\r\n";  // Array with field-value pairs
-                        for (size_t i = 0; i < values.size(); i += 2) {
-                            if (i + 1 < values.size()) {
-                                // Add field
-                                result += "$" + std::to_string(values[i].length()) + "\r\n" + values[i] + "\r\n";
-                                // Add value
-                                result += "$" + std::to_string(values[i + 1].length()) + "\r\n" + values[i + 1] + "\r\n";
-                            }
-                        }
+                        result += format_resp_array(values, true);
                         
                         manual_write(result);
                     } else {
