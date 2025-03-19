@@ -714,7 +714,9 @@ private:
                 timer->expires_after(std::chrono::milliseconds(block_duration_ms)); // Total timeout
 
                 // Track the highest existing ID for each key as the baseline
-                // TODO: Not entirely sure if need this here. Because for blocking do we just care about new data? so the id sent actually don't matter as much? they may wrong etc but we just care about new?
+                // Because we care about new entry added to the existing storage
+                // Ie if somehow the entry provided in command is smaller than the biggest id in the existing storage, then this code here will replace that id
+                // So it won't mistake the entries that are already in the storage as "newly added"
                 std::vector<std::string> last_seen_ids(keys.size());
                 for (size_t i = 0; i < keys.size(); i++) {
                     auto it = stream_storage_->find(keys[i]);
