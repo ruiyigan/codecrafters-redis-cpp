@@ -494,8 +494,7 @@ private:
             }
             // Create a timer for the timeout
             auto timer = std::make_shared<asio::steady_timer>(socket_.get_executor());
-            timer->expires_after(std::chrono::milliseconds(timeoutMs));
-        
+            timer->expires_after(std::chrono::milliseconds(timeoutMs));        
             // Store a reference to self to keep the session alive
             auto self = shared_from_this();
             
@@ -513,7 +512,6 @@ private:
             // Define a recursive function to check acknowledgments
             std::function<void(const asio::error_code&)> checkAcks;
 
-            // TODO: Check is the expiry time even enforced?
             checkAcks = [this, self, timer, numReplicas, &checkAcks, offset](const asio::error_code& ec) {
                 if (ec) {
                     // Timer was canceled or error occurred
@@ -542,7 +540,7 @@ private:
             };
             
             // Start the acknowledgment checking process
-            timer->async_wait(checkAcks);            
+            timer->async_wait(checkAcks);            // I think it starts after waiting for expiry_After
         }
         else if (split_data[2] == "TYPE") {
             // Get type of data from storage
@@ -767,29 +765,11 @@ private:
                         return;
                     }
 
-                    // Schedule next check
-                    timer->expires_after(std::chrono::milliseconds(50));
-                    timer->async_wait(checkEntries);
                 };
 
                 // Start with an immediate async check
                 timer->async_wait(checkEntries);
             }
-            // // Process each stream
-            // std::string result = "*" + std::to_string(keys.size()) + "\r\n";
-            // for (size_t i = 0; i < keys.size(); i++) {
-            //     std::string key = keys[i];
-            //     std::string start_id = ids[i];
-                
-            //     // Use helper function to get stream entries
-            //     auto [entries_count, entries_data] = getStreamEntries(key, start_id, "&");
-                
-            //     // Add this stream's results to the response
-            //     result += "*2\r\n$" + std::to_string(key.size()) + "\r\n" + key + "\r\n*" + 
-            //              std::to_string(entries_count) + "\r\n" + entries_data;
-            // }
-            
-            // manual_write(result);
         }
         else {
             if (!is_replica_) {
