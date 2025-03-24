@@ -341,7 +341,6 @@ private:
         auto& vector_of_tuples = it_stream->second;
         for (const auto& tuple : vector_of_tuples) {
             std::string id = std::get<0>(tuple);
-            std::cout << "id viewed" << id << std::endl;
             std::vector<std::string> values = std::get<1>(tuple);
             
             bool include = false;
@@ -711,6 +710,12 @@ private:
                 auto timer = std::make_shared<asio::steady_timer>(socket_.get_executor());
                 timer->expires_after(std::chrono::milliseconds(block_duration_ms)); // Total timeout
 
+                // Printing current time
+                auto now = std::chrono::steady_clock::now();
+                auto duration = now.time_since_epoch();
+                auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+                std::cout << "std::chrono::steady_clock::now() = " << microseconds << " microseconds since epoch" << std::endl;
+
                 // Track the highest existing ID for each key as the baseline
                 // Because we care about new entry added to the existing storage
                 // Ie if somehow the entry provided in command is smaller than the biggest id in the existing storage, then this code here will replace that id
@@ -732,6 +737,12 @@ private:
 
                 std::function<void(const asio::error_code&)> checkEntries;
                 checkEntries = [this, self, timer, keys, last_seen_ids, has_responded, &checkEntries](const asio::error_code& ec) {
+                    // Printing current time
+                    auto now = std::chrono::steady_clock::now();
+                    auto duration = now.time_since_epoch();
+                    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+                    std::cout << "std::chrono::steady_clock::now() = " << microseconds << " microseconds since epoch" << std::endl;
+
                     if (ec || *has_responded) {
                         if (!*has_responded) {
                             std::cout << "Error or canceled, sending null" << std::endl;
@@ -767,6 +778,7 @@ private:
 
                 };
 
+                // Starts after the expiry if not mistaken which makes sense, check data again when its supposed to expire
                 // Start with an immediate async check
                 timer->async_wait(checkEntries);
             }
