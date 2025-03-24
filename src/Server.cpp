@@ -361,6 +361,51 @@ private:
         return {entries_count, entries_data};
     }
 
+    // When use lambda version it captured the for checkentries with form captured values (keys was 0)
+    void checkEntries(const asio::error_code& ec,
+                      std::shared_ptr<asio::steady_timer> timer,
+                      const std::vector<std::string>& keys,
+                      const std::vector<std::string>& last_seen_ids,
+                      int block_duration_ms) {
+        if (ec) {
+            std::cout << "Error or canceled, sending null" << std::endl;
+            manual_write("$-1\r\n");
+            return;
+        }
+
+        // Check for new entries
+        std::string result = "*" + std::to_string(keys.size()) + "\r\n";
+        bool has_new_entries = false;
+        std::cout << "number of keys" << std::to_string(keys.size()) << std::endl;
+        for (size_t i = 0; i < keys.size(); i++) {
+            auto [entries_count, entries_data] = getStreamEntries(keys[i], last_seen_ids[i], "&");
+            std::cout << "Checking " << keys[i] << " after " << last_seen_ids[i]
+                      << ": entries_count=" << entries_count << ", data=" << entries_data << std::endl;
+            result += "*2\r\n$" + std::to_string(keys[i].size()) + "\r\n" + keys[i] + "\r\n*" +
+                      std::to_string(entries_count) + "\r\n" + entries_data;
+            if (entries_count > 0) {
+                has_new_entries = true;
+            }
+        }
+
+        if (has_new_entries) {
+            manual_write(result);
+            return;
+        }
+
+        // Handle timeout or continue polling
+        if (block_duration_ms != 0 && timer->expiry() <= std::chrono::steady_clock::now()) {
+            manual_write("$-1\r\n");
+            return;
+        }
+
+        std::cout << "time extend?" << std::endl;
+        timer->expires_after(std::chrono::milliseconds(500)); // Poll every 500ms
+        timer->async_wait([this, timer, keys, last_seen_ids, block_duration_ms](const asio::error_code& ec) {
+            checkEntries(ec, timer, keys, last_seen_ids, block_duration_ms);
+        });
+    }
+
     // Processes commands. Commands are sent in an array consisting of only bulk strings
     void processCommand(const std::string data) {
         if (!isDataValidRedisCommand(data)) {
@@ -708,18 +753,14 @@ private:
                 // Blocking XREAD
                 auto self = shared_from_this();
                 auto timer = std::make_shared<asio::steady_timer>(socket_.get_executor());
-                timer->expires_after(std::chrono::milliseconds(block_duration_ms)); // Total timeout
-
-                // Printing current time
-                auto now = std::chrono::steady_clock::now();
-                auto duration = now.time_since_epoch();
-                auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-                std::cout << "std::chrono::steady_clock::now() = " << microseconds << " microseconds since epoch" << std::endl;
+                
+                if (block_duration_ms == 0) {
+                    timer->expires_after(std::chrono::milliseconds(50)); // Initial polling interval for blocking
+                } else {
+                    timer->expires_after(std::chrono::milliseconds(block_duration_ms)); // Total timeout
+                }
 
                 // Track the highest existing ID for each key as the baseline
-                // Because we care about new entry added to the existing storage
-                // Ie if somehow the entry provided in command is smaller than the biggest id in the existing storage, then this code here will replace that id
-                // So it won't mistake the entries that are already in the storage as "newly added"
                 std::vector<std::string> last_seen_ids(keys.size());
                 for (size_t i = 0; i < keys.size(); i++) {
                     auto it = stream_storage_->find(keys[i]);
@@ -733,54 +774,10 @@ private:
                     }
                 }
 
-                auto has_responded = std::make_shared<bool>(false);
-
-                std::function<void(const asio::error_code&)> checkEntries;
-                checkEntries = [this, self, timer, keys, last_seen_ids, has_responded, &checkEntries](const asio::error_code& ec) {
-                    // Printing current time
-                    auto now = std::chrono::steady_clock::now();
-                    auto duration = now.time_since_epoch();
-                    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-                    std::cout << "std::chrono::steady_clock::now() = " << microseconds << " microseconds since epoch" << std::endl;
-
-                    if (ec || *has_responded) {
-                        if (!*has_responded) {
-                            std::cout << "Error or canceled, sending null" << std::endl;
-                            manual_write("$-1\r\n");
-                            *has_responded = true;
-                        }
-                        return;
-                    }
-
-                    // Check for new entries
-                    std::string result = "*" + std::to_string(keys.size()) + "\r\n";
-                    bool has_new_entries = false;
-                    for (size_t i = 0; i < keys.size(); i++) {
-                        auto [entries_count, entries_data] = getStreamEntries(keys[i], last_seen_ids[i], "&");
-                        result += "*2\r\n$" + std::to_string(keys[i].size()) + "\r\n" + keys[i] + "\r\n*" +
-                                std::to_string(entries_count) + "\r\n" + entries_data;
-                        if (entries_count > 0) {
-                            has_new_entries = true;
-                        }
-                    }
-
-                    if (has_new_entries) {
-                        manual_write(result);
-                        *has_responded = true;
-                        return;
-                    }
-
-                    if (timer->expiry() <= std::chrono::steady_clock::now()) {
-                        manual_write("$-1\r\n");
-                        *has_responded = true;
-                        return;
-                    }
-
-                };
-
-                // Starts after the expiry if not mistaken which makes sense, check data again when its supposed to expire
                 // Start with an immediate async check
-                timer->async_wait(checkEntries);
+                timer->async_wait([this, self, timer, keys, last_seen_ids, block_duration_ms](const asio::error_code& ec) {
+                    checkEntries(ec, timer, keys, last_seen_ids, block_duration_ms);
+                });
             }
         }
         else {
