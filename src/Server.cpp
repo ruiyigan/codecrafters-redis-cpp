@@ -376,11 +376,8 @@ private:
         // Check for new entries
         std::string result = "*" + std::to_string(keys.size()) + "\r\n";
         bool has_new_entries = false;
-        std::cout << "number of keys" << std::to_string(keys.size()) << std::endl;
         for (size_t i = 0; i < keys.size(); i++) {
             auto [entries_count, entries_data] = getStreamEntries(keys[i], last_seen_ids[i], "&");
-            std::cout << "Checking " << keys[i] << " after " << last_seen_ids[i]
-                      << ": entries_count=" << entries_count << ", data=" << entries_data << std::endl;
             result += "*2\r\n$" + std::to_string(keys[i].size()) + "\r\n" + keys[i] + "\r\n*" +
                       std::to_string(entries_count) + "\r\n" + entries_data;
             if (entries_count > 0) {
@@ -763,14 +760,25 @@ private:
                 // Track the highest existing ID for each key as the baseline
                 std::vector<std::string> last_seen_ids(keys.size());
                 for (size_t i = 0; i < keys.size(); i++) {
-                    auto it = stream_storage_->find(keys[i]);
-                    if (it != stream_storage_->end() && !it->second.empty()) {
-                        last_seen_ids[i] = std::get<0>(it->second.back());
-                        if (xaadIdIsGreaterThan(ids[i], last_seen_ids[i])) {
-                            last_seen_ids[i] = ids[i];
+                    if (ids[i] == "$") { // Not too sure why becauase I thought all blocking is to block till new entries. Currently if lets say we have 3 existing entries 1, 2, 3 and the stream id is 1, the last seen ids will take it as 3 so only checks for 4 and above
+                        // Use the current maximum ID if $ is specified
+                        auto it = stream_storage_->find(keys[i]);
+                        if (it != stream_storage_->end() && !it->second.empty()) {
+                            last_seen_ids[i] = std::get<0>(it->second.back());
+                        } else {
+                            last_seen_ids[i] = "0-0"; // Default minimal ID for empty streams
                         }
                     } else {
-                        last_seen_ids[i] = ids[i];
+                        // Use the provided ID and update if necessary
+                        auto it = stream_storage_->find(keys[i]);
+                        if (it != stream_storage_->end() && !it->second.empty()) {
+                            last_seen_ids[i] = std::get<0>(it->second.back());
+                            if (xaadIdIsGreaterThan(ids[i], last_seen_ids[i])) { 
+                                last_seen_ids[i] = ids[i];
+                            }
+                        } else {
+                            last_seen_ids[i] = ids[i];
+                        }
                     }
                 }
 
