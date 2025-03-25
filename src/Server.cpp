@@ -469,6 +469,7 @@ private:
 
             auto it = string_storage_->find(key);
             if (it == string_storage_->end()) {
+                (*string_storage_)[key] = std::make_tuple("1", TimePoint::max());
                 write_integer("1");
             } else {
                 std::string stored_value = std::get<0>(it -> second);
