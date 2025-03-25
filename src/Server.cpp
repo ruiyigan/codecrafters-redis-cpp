@@ -613,12 +613,12 @@ private:
                 }
                     
                 // Otherwise, schedule another check after a short delay
-                timer->expires_after(std::chrono::milliseconds(50));
-                timer->async_wait(checkAcks);
+                // timer->expires_after(std::chrono::milliseconds(50)); // This is less likely to be triggered since it starts after waiting for expiry_After
+                // timer->async_wait(checkAcks);
             };
             
             // Start the acknowledgment checking process
-            timer->async_wait(checkAcks);            // I think it starts after waiting for expiry_After
+            timer->async_wait(checkAcks);            // starts after waiting for expiry_After
         }
         else if (split_data[2] == "TYPE") {
             // Get type of data from storage
