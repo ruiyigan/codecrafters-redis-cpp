@@ -462,6 +462,28 @@ private:
             }   
             write(messages, include_size);
         }
+        else if (split_data[2] == "INCR") 
+        {
+            // INCR data from storage
+            std::string key = split_data[4];
+
+            auto it = string_storage_->find(key);
+            if (it == string_storage_->end()) {
+                write_integer("1");
+            } else {
+                std::string stored_value = std::get<0>(it -> second);
+                size_t incr_value = std::stoi(stored_value) + 1;
+                TimePoint expiry_time = std::get<1>(it -> second);
+                
+                if (std::chrono::system_clock::now() > expiry_time) {
+                    string_storage_->erase(it);
+                    write_integer("1");
+                } else {
+                    (*string_storage_)[key] = std::make_tuple(std::to_string(incr_value), expiry_time);
+                    write_integer(std::to_string(incr_value));
+                }
+            }
+        }
         else if (split_data[2] == "CONFIG") 
         {
             // Get config details
@@ -829,6 +851,20 @@ private:
         auto self(shared_from_this());
         std::string formatted_message = "+" + message + "\r\n";
         std::cout << "MESSAGE SENT (simple string)..: " << formatted_message << std::endl;
+        asio::async_write(socket_, asio::buffer(formatted_message, formatted_message.size()),
+            [this, self](asio::error_code ec, std::size_t /*length*/) {
+                if (!ec) {
+                    read();  // Continue reading after successful write
+                } else {
+                    std::cerr << "Write error: " << ec.message() << std::endl;
+                }
+            });
+    }
+
+    void write_integer(std::string message) {
+        auto self(shared_from_this());
+        std::string formatted_message = ":" + message + "\r\n";
+        std::cout << "MESSAGE SENT (integer)..: " << formatted_message << std::endl;
         asio::async_write(socket_, asio::buffer(formatted_message, formatted_message.size()),
             [this, self](asio::error_code ec, std::size_t /*length*/) {
                 if (!ec) {
