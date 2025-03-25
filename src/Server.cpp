@@ -396,7 +396,6 @@ private:
             return;
         }
 
-        std::cout << "time extend?" << std::endl;
         timer->expires_after(std::chrono::milliseconds(500)); // Poll every 500ms
         timer->async_wait([this, timer, keys, last_seen_ids, block_duration_ms](const asio::error_code& ec) {
             checkEntries(ec, timer, keys, last_seen_ids, block_duration_ms);
@@ -475,23 +474,29 @@ private:
                 std::string stored_value = std::get<0>(it -> second);
 
                 // Check if its a valid integer first
+                bool is_integer = true;
                 size_t start = 0;
                 for (size_t i = start; i < stored_value.length(); ++i) {
                     if (!std::isdigit(stored_value[i])) {
                         manual_write("-ERR value is not an integer or out of range\r\n");
+                        is_integer = false;
+                        break;
+                    }
+                }
+
+                if (is_integer) {
+                    size_t incr_value = std::stoi(stored_value) + 1;
+                    TimePoint expiry_time = std::get<1>(it -> second);
+                    
+                    if (std::chrono::system_clock::now() > expiry_time) {
+                        string_storage_->erase(it);
+                        write_integer("1");
+                    } else {
+                        (*string_storage_)[key] = std::make_tuple(std::to_string(incr_value), expiry_time);
+                        write_integer(std::to_string(incr_value));
                     }
                 }
                 
-                size_t incr_value = std::stoi(stored_value) + 1;
-                TimePoint expiry_time = std::get<1>(it -> second);
-                
-                if (std::chrono::system_clock::now() > expiry_time) {
-                    string_storage_->erase(it);
-                    write_integer("1");
-                } else {
-                    (*string_storage_)[key] = std::make_tuple(std::to_string(incr_value), expiry_time);
-                    write_integer(std::to_string(incr_value));
-                }
             }
         }
         else if (split_data[2] == "CONFIG") 
