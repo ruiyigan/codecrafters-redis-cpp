@@ -473,6 +473,15 @@ private:
                 write_integer("1");
             } else {
                 std::string stored_value = std::get<0>(it -> second);
+
+                // Check if its a valid integer first
+                size_t start = 0;
+                for (size_t i = start; i < stored_value.length(); ++i) {
+                    if (!std::isdigit(stored_value[i])) {
+                        manual_write("-ERR value is not an integer or out of range\r\n");
+                    }
+                }
+                
                 size_t incr_value = std::stoi(stored_value) + 1;
                 TimePoint expiry_time = std::get<1>(it -> second);
                 
