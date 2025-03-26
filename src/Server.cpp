@@ -828,6 +828,9 @@ private:
         else if (split_data[2] == "MULTI") {
             write_simple_string("OK");
         }
+        else if (split_data[2] == "EXEC") {
+            manual_write("-ERR EXEC without MULTI");
+        }
         else {
             if (!is_replica_) {
                 messages.push_back("PONG");
