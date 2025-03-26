@@ -876,8 +876,12 @@ private:
             }
         }
         else if (split_data[2] == "DISCARD") {
-            past_transactions.clear();
-            write_simple_string("OK", execute);
+            if (multi_index == -1) {
+                manual_write("-ERR DISCARD without MULTI\r\n");
+            } else {
+                past_transactions.clear();
+                write_simple_string("OK", execute);
+            }
         }
         else {
             if (!is_replica_) {
