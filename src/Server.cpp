@@ -431,7 +431,7 @@ private:
         std::vector<std::string> split_data = splitString(data, '\n');
         std::vector<std::string> messages;
         bool include_size = false;
-        if (multi_index != (past_transactions.size() - 1) && multi_index > exec_index) {
+        if (multi_index != (past_transactions.size() - 1) && multi_index > exec_index && split_data[2] != "DISCARD") {
             write_simple_string("QUEUED", execute);
         } else if (split_data[2] == "ECHO") {
             // Echos back message
