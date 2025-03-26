@@ -406,16 +406,16 @@ private:
     // Processes commands. Commands are sent in an array consisting of only bulk strings
     void processCommand(const std::string data, bool execute = false) {
         if (!execute) { // if executing, don't need to add it as past commands cause it already exist
-            past_transactions_.push_back(data);
+            past_transactions.push_back(data);
         }
         int multi_index = -1;
         int exec_index = -1;
-        for (int i = past_transactions_.size() - 1; i >= 0; --i) {
-            if (multi_index == -1 && (past_transactions_)[i] == "*1\r\n$5\r\nMULTI\r\n") {
+        for (int i = past_transactions.size() - 1; i >= 0; --i) {
+            if (multi_index == -1 && (past_transactions)[i] == "*1\r\n$5\r\nMULTI\r\n") {
                 multi_index = i;
             }
             
-            if (exec_index == -1 && (past_transactions_)[i] == "*1\r\n$4\r\nEXEC\r\n") {
+            if (exec_index == -1 && (past_transactions)[i] == "*1\r\n$4\r\nEXEC\r\n") {
                 exec_index = i;
             }
 
@@ -431,7 +431,7 @@ private:
         std::vector<std::string> split_data = splitString(data, '\n');
         std::vector<std::string> messages;
         bool include_size = false;
-        if (multi_index != (past_transactions_.size() - 1) && multi_index > exec_index) {
+        if (multi_index != (past_transactions.size() - 1) && multi_index > exec_index) {
             write_simple_string("QUEUED", execute);
         } else if (split_data[2] == "ECHO") {
             // Echos back message
@@ -851,29 +851,33 @@ private:
             write_simple_string("OK", execute);
         }
         else if (split_data[2] == "EXEC") {
-            if (past_transactions_.size() >= 2) { // at least have two commands
+            if (past_transactions.size() >= 2) { // at least have two commands
                 if (exec_index - multi_index == 1) {
-                    past_transactions_.clear();
+                    past_transactions.clear();
                     manual_write("*0\r\n", execute);
                 } else {
                     for (int i = multi_index + 1; i < exec_index; ++i) {
-                        std::cout << "command sent to executed: " << past_transactions_[i] << i << exec_index << std::endl;
-                        std::cout << past_transactions_[0] << std::endl;
-                        std::cout << past_transactions_[1] << std::endl;
-                        std::cout << past_transactions_[2] << std::endl;
-                        processCommand(past_transactions_[i], true);
+                        std::cout << "command sent to executed: " << past_transactions[i] << i << exec_index << std::endl;
+                        std::cout << past_transactions[0] << std::endl;
+                        std::cout << past_transactions[1] << std::endl;
+                        std::cout << past_transactions[2] << std::endl;
+                        processCommand(past_transactions[i], true);
                     }
                     std::string response = "*" + std::to_string(exec_responses.size()) + "\r\n";
                     for (const auto& resp : exec_responses) {
                         response += resp;
                     }
                     exec_responses.clear();
-                    past_transactions_.clear(); 
+                    past_transactions.clear(); 
                     manual_write(response, false);
                 }
             } else {
                 manual_write("-ERR EXEC without MULTI\r\n", execute);
             }
+        }
+        else if (split_data[2] == "DISCARD") {
+            past_transactions.clear();
+            write_simple_string("OK", execute);
         }
         else {
             if (!is_replica_) {
@@ -1009,7 +1013,7 @@ private:
     std::array<char, 1024> buffer_;  
     std::shared_ptr<StringStorageType> string_storage_;
     std::shared_ptr<StreamStorageType> stream_storage_;
-    std::vector<std::string> past_transactions_;
+    std::vector<std::string> past_transactions;
     std::vector<std::string> exec_responses;
     std::string dir_;
     std::string dbfilename_;
