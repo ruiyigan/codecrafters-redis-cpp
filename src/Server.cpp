@@ -27,9 +27,8 @@ public:
         std::string masterdetails,
         std::string master_repl_id,
         unsigned master_repl_offset,
-        std::shared_ptr<StreamStorageType> stream_storage,
-        std::shared_ptr<std::vector<std::string>> past_transactions
-    ) : socket_(std::move(socket)), string_storage_(storage), dir_(dir), dbfilename_(dbfilename), masterdetails_(masterdetails), master_repl_id_(master_repl_id), master_repl_offset_(master_repl_offset), stream_storage_(stream_storage), past_transactions_(past_transactions) {}
+        std::shared_ptr<StreamStorageType> stream_storage
+    ) : socket_(std::move(socket)), string_storage_(storage), dir_(dir), dbfilename_(dbfilename), masterdetails_(masterdetails), master_repl_id_(master_repl_id), master_repl_offset_(master_repl_offset), stream_storage_(stream_storage) {}
     void start() {
         read();  // Initiate first read
     }
@@ -405,7 +404,23 @@ private:
 
     // Processes commands. Commands are sent in an array consisting of only bulk strings
     void processCommand(const std::string data) {
-        past_transactions_->push_back(data);
+        past_transactions_.push_back(data);
+        int multi_index = -1;
+        int exec_index = -1;
+        for (int i = past_transactions_.size() - 1; i >= 0; --i) {
+            if (multi_index == -1 && (past_transactions_)[i] == "*1\r\n$5\r\nMULTI\r\n") {
+                multi_index = i;
+            }
+            
+            if (exec_index == -1 && (past_transactions_)[i] == "*1\r\n$4\r\nEXEC\r\n") {
+                exec_index = i;
+            }
+
+            if (multi_index != -1 && exec_index != -1) {
+                break;
+            }
+        }
+        
         if (!isDataValidRedisCommand(data)) {
             std::cout << "Command not of format array of bulk strings: " << data << std::endl;
             return;
@@ -413,7 +428,9 @@ private:
         std::vector<std::string> split_data = splitString(data, '\n');
         std::vector<std::string> messages;
         bool include_size = false;
-        if (split_data[2] == "ECHO") {
+        if (multi_index != (past_transactions_.size() - 1) && multi_index > exec_index) {
+            write_simple_string("QUEUED");
+        } else if (split_data[2] == "ECHO") {
             // Echos back message
             messages.push_back(split_data.back());
             write(messages, include_size); 
@@ -831,8 +848,8 @@ private:
             write_simple_string("OK");
         }
         else if (split_data[2] == "EXEC") {
-            if (past_transactions_->size() >= 2) { // at least have two commands
-                std::string prev = (*past_transactions_)[past_transactions_->size() - 2];; // TODO: For now just check second last element of array, if there is multi then ok 
+            if (past_transactions_.size() >= 2) { // at least have two commands
+                std::string prev = past_transactions_[past_transactions_.size() - 2];; // TODO: For now just check second last element of array, if there is multi then ok 
                 std::vector<std::string> prev_command = splitString(prev, '\n');
                 if (prev_command[2] == "MULTI") {
                     manual_write("*0\r\n");
@@ -956,7 +973,7 @@ private:
     std::array<char, 1024> buffer_;  
     std::shared_ptr<StringStorageType> string_storage_;
     std::shared_ptr<StreamStorageType> stream_storage_;
-    std::shared_ptr<std::vector<std::string>> past_transactions_;
+    std::vector<std::string> past_transactions_;
     std::string dir_;
     std::string dbfilename_;
     std::string masterdetails_;
@@ -978,17 +995,16 @@ void accept_connections(
         std::string masterdetails,
         std::string master_repl_id,
         unsigned master_repl_offset,
-        std::shared_ptr<StreamStorageType> stream_storage,
-        std::shared_ptr<std::vector<std::string>> past_transactions
+        std::shared_ptr<StreamStorageType> stream_storage
     ) {
     acceptor.async_accept(
-        [&acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions](asio::error_code ec, tcp::socket socket) {
+        [&acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage](asio::error_code ec, tcp::socket socket) {
             if (!ec) {
-                std::make_shared<Session>(std::move(socket), storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions)->start();
+                std::make_shared<Session>(std::move(socket), storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage)->start();
                 std::cout << "Client connected" << std::endl;
                 
             }
-            accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions); // Recursively continues to listen for new connections 
+            accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage); // Recursively continues to listen for new connections 
         });
 }
 
@@ -1028,8 +1044,7 @@ void connectToMaster(asio::io_context& io_context,
                      const std::string& master_repl_id,
                      unsigned master_repl_offset,
                      unsigned portnumber,
-                     std::shared_ptr<StreamStorageType> stream_storage,
-                     std::shared_ptr<std::vector<std::string>> past_transactions) {
+                     std::shared_ptr<StreamStorageType> stream_storage) {
     auto [masterHost, masterPort] = parseHostPort(masterdetails);
 
     auto master_socket = std::make_shared<tcp::socket>(io_context);
@@ -1039,7 +1054,7 @@ void connectToMaster(asio::io_context& io_context,
     asio::async_connect(
         *master_socket,
         endpoints,
-        [master_socket, &io_context, masterdetails, storage, dir, dbfilename, master_repl_id, master_repl_offset, portnumber, stream_storage, past_transactions](asio::error_code ec, tcp::endpoint /*ep*/) {
+        [master_socket, &io_context, masterdetails, storage, dir, dbfilename, master_repl_id, master_repl_offset, portnumber, stream_storage](asio::error_code ec, tcp::endpoint /*ep*/) {
             if (!ec) {
                 std::cout << "Connected to master. Now sending PING..." << std::endl;
                 // FIRST STEP SEND PING
@@ -1047,9 +1062,9 @@ void connectToMaster(asio::io_context& io_context,
                 asio::async_write(
                     *master_socket,
                     asio::buffer(ping_cmd),
-                    [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, portnumber, stream_storage, past_transactions](asio::error_code ec, std::size_t /*length*/) {
+                    [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, portnumber, stream_storage](asio::error_code ec, std::size_t /*length*/) {
                         if (!ec) {
-                            readResponse(master_socket, "after PING", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, portnumber, stream_storage, past_transactions]() {
+                            readResponse(master_socket, "after PING", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, portnumber, stream_storage]() {
                                 // SECOND STEP SEND REPLCONF commands
                                 std::string port_str = std::to_string(portnumber);
                                 std::string first_replconf = "*3\r\n"
@@ -1060,23 +1075,23 @@ void connectToMaster(asio::io_context& io_context,
                                 asio::async_write(
                                     *master_socket,
                                     asio::buffer(first_replconf),
-                                    [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions](asio::error_code ec, std::size_t /*length*/) {
+                                    [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage](asio::error_code ec, std::size_t /*length*/) {
                                         if (!ec) {
                                             std::string second_replconf = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
                                             asio::async_write(
                                                 *master_socket,
                                                 asio::buffer(second_replconf),
-                                                [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions](asio::error_code ec, std::size_t /*length*/) {
+                                                [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage](asio::error_code ec, std::size_t /*length*/) {
                                                     if (!ec) {
-                                                        readResponse(master_socket, "after REPLCONF", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions]() {
+                                                        readResponse(master_socket, "after REPLCONF", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage]() {
                                                             // THIRD STEP SEND PSYNC
                                                             std::string psync = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
                                                             asio::async_write(
                                                                 *master_socket,
                                                                 asio::buffer(psync),
-                                                                [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions](asio::error_code ec, std::size_t /*length*/) {
+                                                                [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage](asio::error_code ec, std::size_t /*length*/) {
                                                                     if (!ec) {
-                                                                        readResponse(master_socket, "after PSYNC", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions]() {
+                                                                        readResponse(master_socket, "after PSYNC", [master_socket, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage]() {
                                                                             std::cout << "Replication handshake complete. Switching to replica session." << std::endl;
                                                                             // Now, wrap the master_socket in a Session with replica mode enabled.
                                                                             auto replica_session = std::make_shared<Session>(
@@ -1087,8 +1102,7 @@ void connectToMaster(asio::io_context& io_context,
                                                                                 masterdetails,
                                                                                 master_repl_id,
                                                                                 master_repl_offset,
-                                                                                stream_storage,
-                                                                                past_transactions
+                                                                                stream_storage                        
                                                                             );
                                                                             replica_session->setReplica(true);
                                                                             replica_session->start();
@@ -1271,15 +1285,14 @@ int main(int argc, char* argv[]) {
         
         auto storage = std::make_shared<StringStorageType>();  // Use tuple storage
         auto stream_storage = std::make_shared<StreamStorageType>();
-        auto past_transactions = std::make_shared<std::vector<std::string>>();
         loadDatabase(dir, dbfilename, storage);
 
         // Start accepting connections
-        accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage, past_transactions);
+        accept_connections(acceptor, storage, dir, dbfilename, masterdetails, master_repl_id, master_repl_offset, stream_storage);
         std::cout << "Server listening on port " << portnumber << "..." << std::endl;
 
         if (!masterdetails.empty()) {
-            connectToMaster(io_context, masterdetails, storage, dir, dbfilename, master_repl_id, master_repl_offset, portnumber, stream_storage, past_transactions);
+            connectToMaster(io_context, masterdetails, storage, dir, dbfilename, master_repl_id, master_repl_offset, portnumber, stream_storage);
         }
         
         // Run the I/O service - blocks until all work is done
