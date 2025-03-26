@@ -829,7 +829,7 @@ private:
             write_simple_string("OK");
         }
         else if (split_data[2] == "EXEC") {
-            manual_write("-ERR EXEC without MULTI");
+            manual_write("-ERR EXEC without MULTI\r\n");
         }
         else {
             if (!is_replica_) {
