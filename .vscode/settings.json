@@ -64,6 +64,7 @@
         "iomanip": "cpp",
         "print": "cpp",
         "source_location": "cpp",
-        "memory": "cpp"
+        "memory": "cpp",
+        "functional": "cpp"
     }
 }
