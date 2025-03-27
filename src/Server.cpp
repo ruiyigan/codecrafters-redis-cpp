@@ -7,12 +7,10 @@
 #include <chrono>
 #include <fstream>  
 #include <filesystem>
+#include "../include/storage.hpp"
 
-// Use of type aliasing
-using asio::ip::tcp;  
-using TimePoint = std::chrono::system_clock::time_point;
-using StringStorageType = std::unordered_map<std::string, std::tuple<std::string, TimePoint>>;
-using StreamStorageType = std::unordered_map<std::string, std::vector<std::tuple<std::string, std::vector<std::string>>>>;
+using namespace redis_server;
+using asio::ip::tcp;  // Keep this where tcp is used
 
 // Session class handles each client connection. Inherits from enable_shared_from_this to allow safe shared_ptr management in async callbacks
 // When shared_from_this() called, a new shared_ptr created. Pointer exists as long as at least one async callback holding it
